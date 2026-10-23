@@ -290,7 +290,7 @@ fn test_batch_too_large_error_is_privacy_safe() {
     assert_eq!(err as u32, 18u32);
 }
 
-/// `execute_batch_payroll_with_receipt` also rejects oversized batches.
+/// `execute_batch_with_receipt` also rejects oversized batches.
 #[test]
 fn test_batch_with_receipt_over_limit_returns_batch_too_large() {
     let ctx = setup();
@@ -299,7 +299,7 @@ fn test_batch_with_receipt_over_limit_returns_batch_too_large() {
     let (employees, amounts, pa, pb, pc, nullifiers, period) = build_batch(&ctx, 3);
     let receipt = BytesN::from_array(&ctx.env, &[0xABu8; 32]);
 
-    let result = ctx.executor.try_execute_batch_payroll_with_receipt(
+    let result = ctx.executor.try_execute_batch_with_receipt(
         &ctx.company_id,
         &employees,
         &amounts,
@@ -313,7 +313,7 @@ fn test_batch_with_receipt_over_limit_returns_batch_too_large() {
     assert_eq!(
         result.unwrap_err().unwrap(),
         PaymentError::BatchTooLarge,
-        "execute_batch_payroll_with_receipt must also enforce the batch size limit"
+        "execute_batch_with_receipt must also enforce the batch size limit"
     );
 }
 

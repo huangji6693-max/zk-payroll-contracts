@@ -73,6 +73,10 @@ fn setup_system<'a>(
     commitment.store_commitment(&employee, &employee_commitment);
     registry.add_employee(&company_id, &employee, &employee_commitment);
 
+    // The executor must be configured before withholding can be set.
+    executor.set_executor_admin(&Address::generate(env));
+    executor.set_asset_decimals(&executor.get_addresses().token, &7u32);
+
     let tax_addr = Address::generate(env);
     executor.set_withholding_config(
         &company_id,
@@ -129,7 +133,7 @@ fn test_unused_receipt_succeeds() {
     let receipt = BytesN::from_array(&env, &[7u8; 32]);
     let (employees, amounts, a, b, c, nullifiers) = one_employee_batch(&env, &employee, 500, 1);
 
-    let records = executor.execute_batch_payroll_with_receipt(
+    let records = executor.execute_batch_with_receipt(
         &company_id,
         &employees,
         &amounts,
@@ -152,20 +156,10 @@ fn test_duplicate_receipt_is_rejected() {
     let receipt = BytesN::from_array(&env, &[8u8; 32]);
 
     let (e1, a1, pa1, pb1, pc1, n1) = one_employee_batch(&env, &employee, 500, 1);
-    executor.execute_batch_payroll_with_receipt(
-        &company_id,
-        &e1,
-        &a1,
-        &pa1,
-        &pb1,
-        &pc1,
-        &n1,
-        &1,
-        &receipt,
-    );
+    executor.execute_batch_with_receipt(&company_id, &e1, &a1, &pa1, &pb1, &pc1, &n1, &1, &receipt);
 
     let (e2, a2, pa2, pb2, pc2, n2) = one_employee_batch(&env, &employee, 500, 2);
-    let result = executor.try_execute_batch_payroll_with_receipt(
+    let result = executor.try_execute_batch_with_receipt(
         &company_id,
         &e2,
         &a2,
@@ -188,7 +182,7 @@ fn test_different_receipts_are_independent() {
     let receipt_b = BytesN::from_array(&env, &[11u8; 32]);
 
     let (e1, a1, pa1, pb1, pc1, n1) = one_employee_batch(&env, &employee, 500, 1);
-    executor.execute_batch_payroll_with_receipt(
+    executor.execute_batch_with_receipt(
         &company_id,
         &e1,
         &a1,
@@ -200,8 +194,13 @@ fn test_different_receipts_are_independent() {
         &receipt_a,
     );
 
+    // Each employee may only be paid once per period, and only one period may
+    // be open at a time, so close period 1 and open a fresh one for the second,
+    // independent receipt.
+    let _ = executor.close_period(&company_id, &1);
+    executor.create_period(&company_id);
     let (e2, a2, pa2, pb2, pc2, n2) = one_employee_batch(&env, &employee, 500, 2);
-    executor.execute_batch_payroll_with_receipt(
+    executor.execute_batch_with_receipt(
         &company_id,
         &e2,
         &a2,
@@ -209,7 +208,7 @@ fn test_different_receipts_are_independent() {
         &pb2,
         &pc2,
         &n2,
-        &1,
+        &2,
         &receipt_b,
     );
 
@@ -224,23 +223,12 @@ fn test_receipt_is_globally_unique() {
     let receipt = BytesN::from_array(&env, &[12u8; 32]);
 
     let (e1, a1, pa1, pb1, pc1, n1) = one_employee_batch(&env, &employee, 500, 1);
-    executor.execute_batch_payroll_with_receipt(
-        &company_id,
-        &e1,
-        &a1,
-        &pa1,
-        &pb1,
-        &pc1,
-        &n1,
-        &1,
-        &receipt,
-    );
+    executor.execute_batch_with_receipt(&company_id, &e1, &a1, &pa1, &pb1, &pc1, &n1, &1, &receipt);
 
     // Reuse the same receipt for a different (nonexistent) company ID.
     // The uniqueness guard is global, not per-company.
-    let result = executor.try_execute_batch_payroll_with_receipt(
-        &9999u64, &e1, &a1, &pa1, &pb1, &pc1, &n1, &1, &receipt,
-    );
+    let result = executor
+        .try_execute_batch_with_receipt(&9999u64, &e1, &a1, &pa1, &pb1, &pc1, &n1, &1, &receipt);
 
     assert_eq!(result, Err(Ok(PaymentError::SettlementReceiptAlreadyUsed)));
 }
@@ -253,22 +241,12 @@ fn test_rejected_batch_leaves_receipt_unused() {
 
     // First call consumes the receipt successfully.
     let (e, a, pa, pb, pc, n) = one_employee_batch(&env, &employee, 500, 1);
-    executor.execute_batch_payroll_with_receipt(
-        &company_id,
-        &e,
-        &a,
-        &pa,
-        &pb,
-        &pc,
-        &n,
-        &1,
-        &receipt,
-    );
+    executor.execute_batch_with_receipt(&company_id, &e, &a, &pa, &pb, &pc, &n, &1, &receipt);
 
     // Second call with the same receipt should fail on the receipt guard
     // (which fires before the nullifier guard). The receipt is already
     // marked used from the first call.
-    let result = executor.try_execute_batch_payroll_with_receipt(
+    let result = executor.try_execute_batch_with_receipt(
         &company_id,
         &e,
         &a,
@@ -292,7 +270,7 @@ fn test_failed_batch_leaves_receipt_available_for_retry() {
 
     // The treasury holds 1_000, so a 5_000 payout cannot settle.
     let (e, a, pa, pb, pc, n) = one_employee_batch(&env, &employee, 5_000, 1);
-    let failed = executor.try_execute_batch_payroll_with_receipt(
+    let failed = executor.try_execute_batch_with_receipt(
         &company_id,
         &e,
         &a,
@@ -308,17 +286,8 @@ fn test_failed_batch_leaves_receipt_available_for_retry() {
 
     // A corrected retry with the same receipt ID still succeeds.
     let (e, a, pa, pb, pc, n) = one_employee_batch(&env, &employee, 500, 1);
-    let records = executor.execute_batch_payroll_with_receipt(
-        &company_id,
-        &e,
-        &a,
-        &pa,
-        &pb,
-        &pc,
-        &n,
-        &1,
-        &receipt,
-    );
+    let records =
+        executor.execute_batch_with_receipt(&company_id, &e, &a, &pa, &pb, &pc, &n, &1, &receipt);
 
     assert_eq!(records.len(), 1);
     assert!(executor.is_settlement_receipt_used(&receipt));
@@ -331,17 +300,7 @@ fn test_receipt_is_rejected_in_a_later_period() {
     let receipt = BytesN::from_array(&env, &[15u8; 32]);
 
     let (e1, a1, pa1, pb1, pc1, n1) = one_employee_batch(&env, &employee, 500, 1);
-    executor.execute_batch_payroll_with_receipt(
-        &company_id,
-        &e1,
-        &a1,
-        &pa1,
-        &pb1,
-        &pc1,
-        &n1,
-        &1,
-        &receipt,
-    );
+    executor.execute_batch_with_receipt(&company_id, &e1, &a1, &pa1, &pb1, &pc1, &n1, &1, &receipt);
 
     // Close period 1 and open period 2 for the same company.
     executor.close_period(&company_id, &1);
@@ -349,7 +308,7 @@ fn test_receipt_is_rejected_in_a_later_period() {
 
     // The receipt guard spans payroll runs, not just a single period.
     let (e2, a2, pa2, pb2, pc2, n2) = one_employee_batch(&env, &employee, 500, 2);
-    let result = executor.try_execute_batch_payroll_with_receipt(
+    let result = executor.try_execute_batch_with_receipt(
         &company_id,
         &e2,
         &a2,

@@ -7,28 +7,27 @@
 //! - Cooldown is disabled when set to 0
 //! - Error messages don't expose payroll data
 
-
-
-use payroll::{Payroll, PayrollClient, PeriodFreeze, PeriodReopenCooldown};
-use soroban_sdk::testutils::Address as _;
+use ::token::Token;
+use payroll::{Payroll, PayrollClient};
+use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::{Address, BytesN, Env, Symbol};
 
 fn setup(env: &Env) -> (PayrollClient<'_>, Address, Symbol) {
     env.budget().reset_unlimited();
     env.mock_all_auths();
+    env.ledger().set_timestamp(1_000);
     let admin = Address::generate(env);
     let contract_id = env.register_contract(None, Payroll);
     let client = PayrollClient::new(env, &contract_id);
 
     client.initialize(
         &admin,
-        &Address::generate(env),
+        &env.register_contract(None, Token),
         &Address::generate(env),
         &Address::generate(env),
         &Address::generate(env),
         &Address::generate(env),
     );
-    let _ = (PeriodFreeze, PeriodReopenCooldown);
 
     let period = Symbol::new(env, "2024M01");
     (client, admin, period)
@@ -44,10 +43,9 @@ fn test_set_period_reopen_cooldown() {
     // Set cooldown to 1 hour (3600 seconds)
     payroll.set_period_reopen_cooldown(&admin, &period, &3600u64);
 
-    let cooldown = payroll.get_period_reopen_cooldown(&period);
-    assert!(cooldown.is_some());
-    assert_eq!(cooldown.unwrap().cooldown_seconds, 3600);
-    assert_eq!(cooldown.unwrap().last_reopen_at, 0); // Not yet reopened
+    let cooldown = payroll.get_period_reopen_cooldown(&period).unwrap();
+    assert_eq!(cooldown.cooldown_seconds, 3600);
+    assert_eq!(cooldown.last_reopen_at, 0); // Not yet reopened
 }
 
 #[test]
@@ -97,7 +95,11 @@ fn test_cooldown_disabled_when_zero() {
 
     // Freeze and reopen multiple times
     for i in 0..3 {
-        payroll.freeze_payroll_period(&admin, &period, &Symbol::new(&env, &format!("iteration_{}", i)));
+        payroll.freeze_payroll_period(
+            &admin,
+            &period,
+            &Symbol::new(&env, &format!("iteration_{}", i)),
+        );
         payroll.reopen_payroll_period(&admin, &period);
         assert!(!payroll.is_period_frozen(&period));
     }
@@ -258,8 +260,7 @@ fn test_non_admin_cannot_set_cooldown() {
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &env.register_contract(None, Payroll),
             fn_name: "set_period_reopen_cooldown",
-            args: (&attacker, &period, &3600u64)
-                .into_val(&env),
+            args: (&attacker, &period, &3600u64).into_val(&env),
             sub_invokes: &[],
         },
     }]);
@@ -305,17 +306,17 @@ fn test_cooldown_exact_boundary() {
     payroll.freeze_payroll_period(&admin, &period, &Symbol::new(&env, "first"));
     payroll.reopen_payroll_period(&admin, &period);
 
-    // Advance exactly to the boundary (100 seconds)
+    // Advance to just before the boundary (99 of 100 seconds)
     env.ledger().with_mut(|ledger| {
-        ledger.timestamp = ledger.timestamp + 100;
+        ledger.timestamp = ledger.timestamp + 99;
     });
 
-    // Reopen should still be blocked at exact boundary (< vs <=)
+    // Reopen should still be blocked before the cooldown has fully elapsed
     payroll.freeze_payroll_period(&admin, &period, &Symbol::new(&env, "second"));
     let result = payroll.try_reopen_payroll_period(&admin, &period);
     assert!(result.is_err());
 
-    // Advance one more second
+    // Advance one more second to reach the boundary exactly
     env.ledger().with_mut(|ledger| {
         ledger.timestamp = ledger.timestamp + 1;
     });

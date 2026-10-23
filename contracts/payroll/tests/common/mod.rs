@@ -55,7 +55,7 @@ pub fn setup(env: &Env) -> (PayrollClient<'_>, Address, Address) {
     commitment_client.set_payroll_operator(&contract);
 
     let employee = Address::generate(env);
-    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[0; 32]));
+    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[1; 32]));
     (client, token, employee)
 }
 

@@ -206,10 +206,7 @@ pub fn create_schedule(
     e.storage().persistent().set(&key, &schedule);
 
     e.events().publish(
-        (
-            symbol_short!("payroll"),
-            Symbol::new(e, "schedule_created"),
-        ),
+        (symbol_short!("payroll"), Symbol::new(e, "schedule_created")),
         (schedule_id.clone(), company_id, now),
     );
 
@@ -233,17 +230,13 @@ pub fn transition_schedule(
     admin.require_auth();
 
     let key = ScheduleKey::RecurringSchedule(schedule_id.clone());
-    let mut schedule: SchedulePeriod = e
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| {
-            panic!(
-                "Schedule not found: no recurring schedule exists for this ID \
+    let mut schedule: SchedulePeriod = e.storage().persistent().get(&key).unwrap_or_else(|| {
+        panic!(
+            "Schedule not found: no recurring schedule exists for this ID \
                  (ScheduleTransitionError::{})",
-                ScheduleTransitionError::ScheduleNotFound.code()
-            )
-        });
+            ScheduleTransitionError::ScheduleNotFound.code()
+        )
+    });
 
     if matches!(schedule.state, ScheduleState::Finalized) {
         panic!(

@@ -254,7 +254,7 @@ mod tests {
         });
 
         // Step 1: depends on 0
-        let mut deps1 = Vec::new(env);
+        let mut deps1 = Vec::new(&env);
         deps1.push_back(0);
         steps.push_back(BatchStep {
             id: 1,

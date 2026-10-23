@@ -1,5 +1,5 @@
-use soroban_sdk::contracttype;
 use shared_errors::PaymentError;
+use soroban_sdk::contracttype;
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]

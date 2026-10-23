@@ -93,7 +93,7 @@ fn dry_run_reports_unauthorized_source() {
     let source = Address::generate(&env);
 
     let (_, amounts, employees) = common::one_payment(&env, &employee);
-    let args = payroll::DryRunArgs {
+    let args = payroll::failure_reasons::DryRunArgs {
         amounts: amounts.clone(),
         employees: employees.clone(),
         expected_total_spend: 100,
@@ -102,6 +102,9 @@ fn dry_run_reports_unauthorized_source() {
         proof_count: 1,
         sequence: None,
         source_address: Some(source),
+        contract_period: None,
+        expected_contract_period: None,
+        contract_period_closed: false,
     };
 
     let report = payroll.dry_run_batch_process_payroll(&args);

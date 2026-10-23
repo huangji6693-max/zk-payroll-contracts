@@ -5,7 +5,7 @@
 //! never expose salary amounts, employee identities, commitment hashes,
 //! or other sensitive payroll data.
 
-use soroban_sdk::{contracttype, String, Symbol, Vec, Env};
+use soroban_sdk::{contracttype, Env, String, Symbol, Vec};
 
 /// Maximum number of context fields allowed in a single error context.
 pub const MAX_ERROR_CONTEXT_FIELDS: u32 = 8;

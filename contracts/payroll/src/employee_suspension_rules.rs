@@ -1,5 +1,5 @@
-use soroban_sdk::contracttype;
 use shared_errors::StateError;
+use soroban_sdk::contracttype;
 
 #[contracttype]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

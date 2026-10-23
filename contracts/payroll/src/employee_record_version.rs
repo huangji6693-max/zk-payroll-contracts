@@ -1,5 +1,5 @@
-use soroban_sdk::{contracttype, BytesN};
 use shared_errors::StorageError;
+use soroban_sdk::{contracttype, BytesN};
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]

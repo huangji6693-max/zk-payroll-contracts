@@ -9,7 +9,7 @@
 use payroll::{DisputeStatus, Payroll, PayrollClient};
 use proof_verifier::{ProofVerifier, ProofVerifierClient, VerificationKey};
 use salary_commitment::{SalaryCommitmentContract, SalaryCommitmentContractClient};
-use soroban_sdk::testutils::Address as _;
+use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::{Address, BytesN, Env, Symbol, Vec};
 use token::{Token, TokenClient};
 
@@ -230,6 +230,7 @@ fn test_resolved_dispute_allows_finalization() {
 #[test]
 fn test_resolved_dispute_allows_archive_and_prune() {
     let ctx = setup_test_context();
+    ctx.env.ledger().with_mut(|l| l.timestamp = 1_000);
     let run_id = prepare_run(&ctx, 6, 10_000i128);
     ctx.payroll_client.finalize_payroll_run(&ctx.admin, &run_id);
 
@@ -247,6 +248,9 @@ fn test_resolved_dispute_allows_archive_and_prune() {
     ctx.payroll_client.archive_payroll_run(&ctx.admin, &run_id);
     assert!(ctx.payroll_client.is_run_archived(&run_id));
 
+    ctx.env.ledger().with_mut(|l| {
+        l.timestamp += 31 * 24 * 60 * 60;
+    });
     ctx.payroll_client.prune_payroll_run(&ctx.admin, &run_id);
     assert!(!ctx.payroll_client.is_run_archived(&run_id));
 }

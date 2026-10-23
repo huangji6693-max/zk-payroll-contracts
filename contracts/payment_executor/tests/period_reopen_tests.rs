@@ -17,7 +17,7 @@ use payment_executor::{ContractAddresses, PaymentError, PaymentExecutor, Payment
 use payroll_registry::{PayrollRegistry, PayrollRegistryClient};
 use proof_verifier::{ProofVerifier, ProofVerifierClient, VerificationKey};
 use salary_commitment::{SalaryCommitmentContract, SalaryCommitmentContractClient};
-use soroban_sdk::testutils::Address as _;
+use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::{Address, BytesN, Env, Vec};
 
 fn mock_vk(env: &Env) -> VerificationKey {
@@ -83,6 +83,10 @@ fn setup_system<'a>(
 
     token.mint(&treasury, &1_000_000);
 
+    // The executor must be configured before withholding can be set.
+    executor.set_executor_admin(&Address::generate(env));
+    executor.set_asset_decimals(&executor.get_addresses().token, &7u32);
+
     let tax_addr = Address::generate(env);
     executor.set_withholding_config(
         &company_id,
@@ -115,6 +119,9 @@ fn test_authorized_admin_can_reopen_closed_period() {
     let p1 = executor.create_period(&company_id);
     assert_eq!(p1.period_id, 1);
     assert!(!p1.closed);
+
+    // Advance the ledger so the close records a meaningful end ledger.
+    env.ledger().with_mut(|info| info.sequence_number = 10);
 
     // Close period 1
     let closed_p1 = executor.close_period(&company_id, &1);
@@ -223,7 +230,7 @@ fn test_reopen_period_revoked_admin_fails() {
 }
 
 #[test]
-#[should_panic(expected = "Contract is paused")]
+#[should_panic(expected = "Payroll is paused")]
 fn test_reopen_period_while_paused_fails() {
     let env = Env::default();
     let (executor, _registry, _commitment_client, _token, company_id, _admin, _treasury) =

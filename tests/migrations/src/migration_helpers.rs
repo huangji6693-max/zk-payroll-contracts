@@ -229,14 +229,14 @@ impl MigrationContext {
         commitment_client.store_commitment(&self.bob, &bob_commitment);
         registry_client.add_employee(&self.company_id_1, &self.bob, &bob_commitment);
 
-        // Carol: Inactive employee
+        // Carol: offboarded employee
         let carol_commitment = state_fixtures::seed_bytes32(env, 0x12);
         commitment_client.store_commitment(&self.carol, &carol_commitment);
         registry_client.add_employee(&self.company_id_1, &self.carol, &carol_commitment);
         registry_client.set_employee_status(
             &self.company_id_1,
             &self.carol,
-            &EmployeeStatus::Inactive,
+            &EmployeeStatus::Offboarded,
         );
 
         // David: Incomplete employee (no explicit status set means Incomplete)
@@ -446,15 +446,15 @@ pub fn assert_post_migration_invariants(env: &Env, ctx: &MigrationContext) {
         "MG-05: Active employee status must survive migration"
     );
 
-    // Carol: Inactive
+    // Carol: offboarded
     assert!(
         !registry_client.is_eligible(&ctx.company_id_1, &ctx.carol),
-        "MG-06: Inactive employee must remain ineligible"
+        "MG-06: offboarded employee must remain ineligible"
     );
     assert_eq!(
         registry_client.get_employee_status(&ctx.company_id_1, &ctx.carol),
-        EmployeeStatus::Inactive,
-        "MG-07: Inactive employee status must survive migration"
+        EmployeeStatus::Offboarded,
+        "MG-07: offboarded employee status must survive migration"
     );
 
     // David: Incomplete

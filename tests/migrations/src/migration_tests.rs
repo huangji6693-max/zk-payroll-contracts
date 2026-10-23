@@ -107,7 +107,7 @@ mod migration_tests {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // MG-02: Employee Records (Active/Inactive/Incomplete) Survive Migration
+    // MG-02: Employee Records (Active/Offboarded/Incomplete) Survive Migration
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// MG-02: Verify that employee records with all status variants survive
@@ -147,14 +147,14 @@ mod migration_tests {
             "Bob's original commitment must be preserved"
         );
 
-        // Carol: Inactive — should NOT be eligible
+        // Carol: offboarded — should NOT be eligible
         assert!(
             !registry_client.is_eligible(&ctx.company_id_1, &ctx.carol),
-            "Inactive employee must remain ineligible after migration"
+            "offboarded employee must remain ineligible after migration"
         );
         assert_eq!(
             registry_client.get_employee_status(&ctx.company_id_1, &ctx.carol),
-            EmployeeStatus::Inactive,
+            EmployeeStatus::Offboarded,
         );
 
         // David: Incomplete — should NOT be eligible
@@ -407,7 +407,7 @@ mod migration_tests {
         );
         assert!(
             !registry_client.is_eligible(&ctx.company_id_1, &ctx.carol),
-            "Inactive employee must remain ineligible after new employee added"
+            "offboarded employee must remain ineligible after new employee added"
         );
 
         // Run counter should still work

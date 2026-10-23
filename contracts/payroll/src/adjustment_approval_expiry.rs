@@ -90,7 +90,7 @@ mod tests {
     fn approval_long_in_the_past_is_expired() {
         let env = Env::default();
         let p = policy(&env, 86_400); // 24 h
-        // approved 3 days ago
+                                      // approved 3 days ago
         assert!(p.is_expired(1_000_259_200, 1_000_000_000));
     }
 

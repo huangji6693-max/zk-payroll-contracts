@@ -100,7 +100,11 @@ pub fn validate_no_overlap(
     }
 
     // Check for overlap: new starts before existing ends AND new ends after existing starts
-    let new_end = if new.effective_until == 0 { u64::MAX } else { new.effective_until };
+    let new_end = if new.effective_until == 0 {
+        u64::MAX
+    } else {
+        new.effective_until
+    };
     if new.effective_from < existing.effective_until && new_end > existing.effective_from {
         return Err(PolicyDateError::OverlappingPeriods);
     }

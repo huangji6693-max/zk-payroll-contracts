@@ -122,7 +122,7 @@ fn setup_system<'a>(env: &'a Env, decimals: u32) -> Ctx<'a> {
     let admin = Address::generate(env);
     let treasury = Address::generate(env);
     let company_id = registry.register_company(&admin, &treasury);
-    executor.create_period(&company_id).unwrap();
+    let _period = executor.create_period(&company_id);
 
     Ctx {
         executor,
@@ -142,17 +142,15 @@ fn setup_system<'a>(env: &'a Env, decimals: u32) -> Ctx<'a> {
 /// gross cap and the net floor (both are only enforced when > 0), so these
 /// tests isolate the bps division from unrelated validation.
 fn set_withholding(ctx: &Ctx, income_tax_bps: u32, social_tax_bps: u32) {
-    ctx.executor
-        .set_withholding_config(
-            &ctx.company_id,
-            &income_tax_bps,
-            &social_tax_bps,
-            &ctx.income_tax_recipient,
-            &ctx.social_tax_recipient,
-            &0i128,
-            &0i128,
-        )
-        .expect("withholding config is valid: combined bps < 10_000");
+    let _config = ctx.executor.set_withholding_config(
+        &ctx.company_id,
+        &income_tax_bps,
+        &social_tax_bps,
+        &ctx.income_tax_recipient,
+        &ctx.social_tax_recipient,
+        &0i128,
+        &0i128,
+    );
 }
 
 /// Enrol a fresh employee in the company and pay them `gross`, funding the
@@ -166,18 +164,16 @@ fn pay(ctx: &Ctx, env: &Env, gross: i128, seed: u8) {
         .add_employee(&ctx.company_id, &employee, &commitment);
     ctx.token.mint(&ctx.treasury, &gross);
 
-    ctx.executor
-        .execute_payment(
-            &ctx.company_id,
-            &employee,
-            &gross,
-            &BytesN::from_array(env, &[seed; 64]),
-            &BytesN::from_array(env, &[seed; 128]),
-            &BytesN::from_array(env, &[seed; 64]),
-            &BytesN::from_array(env, &[seed; 32]),
-            &1,
-        )
-        .expect("payment succeeds: asset is configured, period is open, mock proof verifies");
+    let _record = ctx.executor.execute_payment(
+        &ctx.company_id,
+        &employee,
+        &gross,
+        &BytesN::from_array(env, &[seed; 64]),
+        &BytesN::from_array(env, &[seed; 128]),
+        &BytesN::from_array(env, &[seed; 64]),
+        &BytesN::from_array(env, &[seed; 32]),
+        &1,
+    );
 }
 
 /// Fixture A - happy path with clean division, no remainder anywhere.
@@ -374,19 +370,16 @@ fn decimal_precision_gates_minimum_amount_but_not_withholding_arithmetic() {
 
     // Exactly at the threshold is accepted, and the bps split is unchanged by
     // the decimal precision: 1_000 * 1_000 / 10_000 = 100 exactly.
-    ctx12
-        .executor
-        .execute_payment(
-            &ctx12.company_id,
-            &employee,
-            &1_000i128,
-            &BytesN::from_array(&env12, &[7u8; 64]),
-            &BytesN::from_array(&env12, &[7u8; 128]),
-            &BytesN::from_array(&env12, &[7u8; 64]),
-            &BytesN::from_array(&env12, &[7u8; 32]),
-            &1,
-        )
-        .expect("1_000 sits exactly at the 12-decimal threshold and is payable");
+    ctx12.executor.execute_payment(
+        &ctx12.company_id,
+        &employee,
+        &1_000i128,
+        &BytesN::from_array(&env12, &[7u8; 64]),
+        &BytesN::from_array(&env12, &[7u8; 128]),
+        &BytesN::from_array(&env12, &[7u8; 64]),
+        &BytesN::from_array(&env12, &[7u8; 32]),
+        &1,
+    );
     assert_eq!(ctx12.token.balance(&ctx12.income_tax_recipient), 100);
     assert_eq!(ctx12.token.balance(&ctx12.social_tax_recipient), 50);
 }

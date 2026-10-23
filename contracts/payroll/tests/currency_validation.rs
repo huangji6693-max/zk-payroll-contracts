@@ -7,10 +7,10 @@
 mod tests {
     use payroll::{Payroll, PayrollClient};
     use proof_verifier::{ProofVerifier, ProofVerifierClient, VerificationKey};
-    use salary_commitment::SalaryCommitmentContractClient;
+    use salary_commitment::{SalaryCommitmentContract, SalaryCommitmentContractClient};
     use soroban_sdk::{
         testutils::{Address as _, Ledger as _},
-        Address, BytesN, Env, Symbol, Vec,
+        Address, BytesN, Env, String, Symbol, Vec,
     };
     use token::{Token, TokenClient};
 
@@ -42,31 +42,33 @@ mod tests {
     }
 
     fn setup(env: &Env) -> TestContext {
+        env.mock_all_auths();
         env.ledger().set_sequence_number(100);
         env.ledger().set_timestamp(1000);
 
-        let usdc_token = Address::random(env);
-        let admin = Address::random(env);
-        let treasury = Address::random(env);
-        let verifier = Address::random(env);
-        let commitment_contract = Address::random(env);
+        let usdc_token = env.register_contract(None, Token);
+        let admin = Address::generate(env);
+        let treasury = Address::generate(env);
+        let verifier = env.register_contract(None, ProofVerifier);
+        let commitment_contract = env.register_contract(None, SalaryCommitmentContract);
 
         let token_client = TokenClient::new(env, &usdc_token);
         token_client.initialize(
-            &Address::random(env),
+            &Address::generate(env),
             &6u32,
-            &"USDC".into(),
-            &"USD Coin".into(),
+            &String::from_str(env, "USDC"),
+            &String::from_str(env, "USD Coin"),
         );
 
-        let payroll = Address::random(env);
+        let payroll = env.register_contract(None, Payroll);
         let payroll_client = PayrollClient::new(env, &payroll);
 
         let verifier_client = ProofVerifierClient::new(env, &verifier);
-        verifier_client.initialize(&mock_vk(env));
+        verifier_client.init_verifier_admin(&Address::generate(env));
+        verifier_client.initialize_verifier(&mock_vk(env));
 
         let commitment_client = SalaryCommitmentContractClient::new(env, &commitment_contract);
-        commitment_client.initialize(&Address::random(env));
+        commitment_client.init_commitment_admin(&Address::generate(env));
 
         token_client.mint(&treasury, &100000000i128);
 
@@ -76,8 +78,9 @@ mod tests {
             &verifier,
             &commitment_contract,
             &treasury,
-            &Address::random(env),
+            &Address::generate(env),
         );
+        commitment_client.set_payroll_operator(&payroll);
 
         TestContext {
             env: env.clone(),
@@ -94,13 +97,11 @@ mod tests {
         let env = Env::default();
         let ctx = setup(&env);
 
-        ctx.admin.require_auth_for_next_call();
-
         ctx.payroll_client.set_payroll_currency(
             &ctx.admin,
             &ctx.usdc_token,
             &Symbol::new(&env, "USDC"),
-            &6u8,
+            &6u32,
         );
 
         let config = ctx
@@ -109,7 +110,7 @@ mod tests {
             .expect("Currency config should be set");
 
         assert_eq!(config.asset, ctx.usdc_token);
-        assert_eq!(config.decimals, 6u8);
+        assert_eq!(config.decimals, 6u32);
     }
 
     #[test]
@@ -119,13 +120,11 @@ mod tests {
 
         let current_time = env.ledger().timestamp();
 
-        ctx.admin.require_auth_for_next_call();
-
         ctx.payroll_client.set_payroll_currency(
             &ctx.admin,
             &ctx.usdc_token,
             &Symbol::new(&env, "USDC"),
-            &6u8,
+            &6u32,
         );
 
         let config = ctx
@@ -154,36 +153,34 @@ mod tests {
         let ctx = setup(&env);
 
         // Set initial currency
-        ctx.admin.require_auth_for_next_call();
         ctx.payroll_client.set_payroll_currency(
             &ctx.admin,
             &ctx.usdc_token,
             &Symbol::new(&env, "USDC"),
-            &6u8,
+            &6u32,
         );
 
         let config1 = ctx
             .payroll_client
             .get_payroll_currency()
             .expect("First config should exist");
-        assert_eq!(config1.decimals, 6u8);
+        assert_eq!(config1.decimals, 6u32);
 
         env.ledger().set_sequence_number(200);
 
         // Update to different currency
-        ctx.admin.require_auth_for_next_call();
         ctx.payroll_client.set_payroll_currency(
             &ctx.admin,
             &ctx.usdc_token,
             &Symbol::new(&env, "USDC"),
-            &8u8,
+            &8u32,
         );
 
         let config2 = ctx
             .payroll_client
             .get_payroll_currency()
             .expect("Updated config should exist");
-        assert_eq!(config2.decimals, 8u8);
+        assert_eq!(config2.decimals, 8u32);
         assert!(config2.configured_at >= config1.configured_at);
     }
 
@@ -192,11 +189,9 @@ mod tests {
         let env = Env::default();
         let ctx = setup(&env);
 
-        ctx.admin.require_auth_for_next_call();
-
         let currency_code = Symbol::new(&env, "USDC");
         ctx.payroll_client
-            .set_payroll_currency(&ctx.admin, &ctx.usdc_token, &currency_code, &6u8);
+            .set_payroll_currency(&ctx.admin, &ctx.usdc_token, &currency_code, &6u32);
 
         let config = ctx
             .payroll_client
@@ -212,18 +207,17 @@ mod tests {
         let ctx = setup(&env);
 
         // Test with 6 decimals (standard for USDC)
-        ctx.admin.require_auth_for_next_call();
         ctx.payroll_client.set_payroll_currency(
             &ctx.admin,
             &ctx.usdc_token,
             &Symbol::new(&env, "USDC"),
-            &6u8,
+            &6u32,
         );
 
         let config = ctx
             .payroll_client
             .get_payroll_currency()
             .expect("Currency config should be set");
-        assert_eq!(config.decimals, 6u8);
+        assert_eq!(config.decimals, 6u32);
     }
 }

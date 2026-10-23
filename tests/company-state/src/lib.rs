@@ -87,9 +87,10 @@ mod tests {
         );
 
         commitment_client.set_payroll_operator(&payroll_id);
+        payroll_client.register_import_source(&admin, &0u32);
 
         let employee = Address::generate(env);
-        commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[0u8; 32]));
+        commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[1u8; 32]));
 
         (payroll_client, admin, employee)
     }
@@ -201,6 +202,7 @@ mod tests {
             &1000i128,
             &test_nonce(&env, 5),
             &None,
+            &admin,
         );
         assert!(result.is_err());
     }
@@ -220,6 +222,7 @@ mod tests {
             &1000i128,
             &test_nonce(&env, 8),
             &None,
+            &admin,
         );
         assert!(result.is_err());
     }
@@ -240,6 +243,7 @@ mod tests {
             &1000i128,
             &test_nonce(&env, 6),
             &None,
+            &admin,
         );
         assert!(blocked.is_err());
 
@@ -253,6 +257,7 @@ mod tests {
             &1000i128,
             &test_nonce(&env, 7),
             &None,
+            &admin,
         );
         assert!(run_id > 0);
     }

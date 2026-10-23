@@ -216,7 +216,9 @@ fn test_normalization_rejects_whitespace_only_identifier() {
     let fixture = setup_test_fixture(&env);
 
     let whitespace = String::from_str(&env, "   \t\r\n  ");
-    fixture.commitment.normalize_employee_identifier(&whitespace);
+    fixture
+        .commitment
+        .normalize_employee_identifier(&whitespace);
 }
 
 #[test]
@@ -231,7 +233,9 @@ fn test_normalization_rejects_overlong_identifier() {
 }
 
 #[test]
-#[should_panic(expected = "Employee identifier contains invalid characters: must be printable ASCII")]
+#[should_panic(
+    expected = "Employee identifier contains invalid characters: must be printable ASCII"
+)]
 fn test_normalization_rejects_control_characters() {
     let env = Env::default();
     let fixture = setup_test_fixture(&env);

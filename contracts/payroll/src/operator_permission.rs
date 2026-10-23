@@ -80,9 +80,7 @@ pub fn check_operator_capability(
     required: OperatorCapability,
     grant: Option<&OperatorGrant>,
 ) -> OperatorPermissionCheck {
-    let authorized = grant.map_or(false, |g| {
-        g.capabilities.iter().any(|c| c == required)
-    });
+    let authorized = grant.map_or(false, |g| g.capabilities.iter().any(|c| c == required));
     OperatorPermissionCheck {
         operator: operator.clone(),
         required,
@@ -133,7 +131,8 @@ mod tests {
         let env = Env::default();
         let op = Address::generate(&env);
         let grant = make_grant(&env, &op, vec![&env, OperatorCapability::ExecutePayroll]);
-        let check = check_operator_capability(&env, &op, OperatorCapability::ExecutePayroll, Some(&grant));
+        let check =
+            check_operator_capability(&env, &op, OperatorCapability::ExecutePayroll, Some(&grant));
         assert!(check.authorized);
     }
 
@@ -142,7 +141,8 @@ mod tests {
         let env = Env::default();
         let op = Address::generate(&env);
         let grant = make_grant(&env, &op, vec![&env, OperatorCapability::Read]);
-        let check = check_operator_capability(&env, &op, OperatorCapability::ExecutePayroll, Some(&grant));
+        let check =
+            check_operator_capability(&env, &op, OperatorCapability::ExecutePayroll, Some(&grant));
         assert!(!check.authorized);
     }
 
@@ -176,7 +176,8 @@ mod tests {
             let check = check_operator_capability(&env, &op, cap, Some(&grant));
             assert!(check.authorized, "expected authorized for {:?}", cap);
         }
-        let check = check_operator_capability(&env, &op, OperatorCapability::ExecutePayroll, Some(&grant));
+        let check =
+            check_operator_capability(&env, &op, OperatorCapability::ExecutePayroll, Some(&grant));
         assert!(!check.authorized);
     }
 
@@ -185,7 +186,8 @@ mod tests {
         let env = Env::default();
         let op = Address::generate(&env);
         let grant = make_grant(&env, &op, vec![&env, OperatorCapability::Configure]);
-        let check = check_operator_capability(&env, &op, OperatorCapability::Configure, Some(&grant));
+        let check =
+            check_operator_capability(&env, &op, OperatorCapability::Configure, Some(&grant));
         assert_eq!(check.operator, op);
         assert_eq!(check.required, OperatorCapability::Configure);
         assert!(check.authorized);

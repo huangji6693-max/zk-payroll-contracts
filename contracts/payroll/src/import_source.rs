@@ -68,11 +68,7 @@ pub struct ImportSource {
 /// # Panics
 /// * If called by a non-admin address
 /// * If source_address is the zero address
-pub fn register_source(
-    env: &Env,
-    source_address: Address,
-    source_type: ImportSourceType,
-) {
+pub fn register_source(env: &Env, source_address: Address, source_type: ImportSourceType) {
     // Verify caller is the admin
     let addresses = env
         .storage()
@@ -101,10 +97,8 @@ pub fn register_source(
         .persistent()
         .set(&DataKey::ImportSource(source_address.clone()), &source);
 
-    env.events().publish(
-        (symbol_short!("payroll"), symbol_short!("src_reg")),
-        (),
-    );
+    env.events()
+        .publish((symbol_short!("payroll"), symbol_short!("src_reg")), ());
 }
 
 /// Deactivate an import source without removing its record.
@@ -139,10 +133,8 @@ pub fn deactivate_source(env: &Env, source_address: Address) {
     source.is_active = false;
     env.storage().persistent().set(&source_key, &source);
 
-    env.events().publish(
-        (symbol_short!("payroll"), symbol_short!("src_deact")),
-        (),
-    );
+    env.events()
+        .publish((symbol_short!("payroll"), symbol_short!("src_deact")), ());
 }
 
 /// Check if a source is authorized and active.

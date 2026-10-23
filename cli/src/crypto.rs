@@ -23,12 +23,12 @@ use ark_bn254::Fr;
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
 use light_poseidon::{Poseidon, PoseidonHasher};
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::rngs::SysRng;
+use rand::TryRng;
 
 /// Generate a uniformly random BN254 scalar field element using the OS CSPRNG.
 ///
-/// Reads 64 bytes (512 bits) from [`OsRng`] and reduces modulo the BN254
+/// Reads 64 bytes (512 bits) from [`SysRng`] and reduces modulo the BN254
 /// scalar field prime.  The statistical bias from the reduction is at most
 /// 2^{-254}, which is cryptographically negligible.
 ///
@@ -42,7 +42,9 @@ pub fn gen_blinding_factor() -> [u8; 32] {
     // 64 bytes → 512 bits; reducing 512-bit uniform value mod 254-bit prime
     // gives bias < 2^{-254}.
     let mut wide = [0u8; 64];
-    OsRng.fill_bytes(&mut wide);
+    let mut rng = SysRng;
+    rng.try_fill_bytes(&mut wide)
+        .expect("the operating system must supply entropy");
 
     let fr = Fr::from_le_bytes_mod_order(&wide);
     fr_to_le_bytes(fr)

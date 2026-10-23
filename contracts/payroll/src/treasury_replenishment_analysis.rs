@@ -91,9 +91,8 @@ pub fn calculate_required_reserve(
     config: &TreasuryReplenishmentConfig,
     committed_obligations: i128,
 ) -> i128 {
-    let bps_reserve = (committed_obligations
-        .saturating_mul(config.reserve_buffer_bps as i128))
-        / 10_000;
+    let bps_reserve =
+        (committed_obligations.saturating_mul(config.reserve_buffer_bps as i128)) / 10_000;
 
     if bps_reserve > config.min_reserve_amount {
         bps_reserve

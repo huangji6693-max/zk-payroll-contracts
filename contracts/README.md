@@ -466,7 +466,7 @@ stellar contract invoke \
 - Batches that exceed the limit are rejected immediately with
   `PaymentError::BatchTooLarge` (error code 18). The error carries no
   employee addresses or salary amounts, keeping failure paths privacy-safe.
-- `execute_batch_payroll_with_receipt` enforces the same limit as
+- `execute_batch_with_receipt` enforces the same limit as
   `execute_batch_payroll`.
 
 ### Error reference
@@ -628,4 +628,5 @@ Settlement payout execution validates token interfaces before payouts are commit
 - `check_settlement_payout(token_addr, company_id, run_id)`: Unified preflight
   check validating both current window/schedule execution timing and token interface
   support in a single call.
+
 

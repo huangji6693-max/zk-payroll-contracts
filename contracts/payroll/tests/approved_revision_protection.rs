@@ -12,6 +12,7 @@
 //! | `test_submit_without_tracker_rejected` | Approving an unknown draft is rejected |
 //! | `test_non_admin_cannot_init_or_amend` | Only the admin may initialise or revise a tracker |
 
+use ::token::Token;
 use payroll::{Payroll, PayrollClient};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{Address, BytesN, Env};
@@ -37,7 +38,7 @@ fn setup() -> Ctx {
     let client = PayrollClient::new(&env, &payroll_id);
     client.initialize(
         &admin,
-        &Address::generate(&env),
+        &env.register_contract(None, Token),
         &Address::generate(&env),
         &Address::generate(&env),
         &Address::generate(&env),

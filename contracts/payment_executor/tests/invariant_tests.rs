@@ -107,6 +107,10 @@ fn setup_system<'a>(
     }
 
     // Issue #538: set zero-rate withholding config so execute_payment is unblocked
+    // The executor must be configured before withholding can be set.
+    executor.set_executor_admin(&Address::generate(env));
+    executor.set_asset_decimals(&executor.get_addresses().token, &7u32);
+
     let tax_addr = Address::generate(env);
     executor.set_withholding_config(
         &company_id,
@@ -406,6 +410,8 @@ fn test_company_totals_are_isolated() {
     let treasury_b = soroban_sdk::Address::generate(&env);
     let company_id_b = registry.register_company(&admin_b, &treasury_b);
     executor.create_period(&company_id_b);
+    let tax_b = soroban_sdk::Address::generate(&env);
+    executor.set_withholding_config(&company_id_b, &0u32, &0u32, &tax_b, &tax_b, &0i128, &0i128);
     token.mint(&treasury_b, &100_000);
 
     let (emp_a, _) = register_employee(&env, &registry, &commitment_client, company_id_a, 70);

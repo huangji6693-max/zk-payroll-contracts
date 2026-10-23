@@ -22,7 +22,7 @@
 //! ```
 
 use anyhow::{Context, Result};
-use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Table};
+use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
 use crate::{db, rpc};
 
@@ -80,17 +80,14 @@ pub fn run(args: ReconcileArgs<'_>) -> Result<()> {
 
     // ── Build table ───────────────────────────────────────────────────────────
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .apply_modifier(UTF8_ROUND_CORNERS)
-        .set_header(vec![
-            "Employee",
-            "Amount (XLM)",
-            "Period",
-            "Ledger closed at",
-            "In local DB?",
-            "Narrative",
-        ]);
+    table.load_style(UTF8_FULL).set_header(vec![
+        "Employee",
+        "Amount (XLM)",
+        "Period",
+        "Ledger closed at",
+        "In local DB?",
+        "Narrative",
+    ]);
 
     for ev in &events {
         let in_db = match &conn_opt {

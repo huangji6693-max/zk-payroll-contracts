@@ -437,7 +437,7 @@ impl RetentionManagerContract {
     }
 
     fn require_purger(env: &Env) {
-        Self::get_purger(env).require_auth();
+        Self::get_purger(env.clone()).require_auth();
     }
 
     fn require_not_paused(env: &Env) {

@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(deprecated)]
 
 //! Centralized structured event emission for the zk-payroll contract suite.
 //!
@@ -117,6 +118,7 @@ pub fn emit_deposit(e: &Env, from: Address, amount: i128, deposit_id: BytesN<32>
 /// lifecycle transition. The payload contains no employee, salary-row, or
 /// proof data; consumers can update treasury health dashboards without
 /// polling token and reservation storage.
+#[allow(clippy::too_many_arguments)]
 pub fn emit_treasury_balance_snapshot(
     e: &Env,
     asset: Address,
@@ -1501,6 +1503,73 @@ pub fn emit_retention_pruned(e: &Env, record_type: Symbol, record_id: u64, admin
     e.events().publish(
         (payroll_topic(), Symbol::new(e, "retention_pruned")),
         (record_type, record_id, admin),
+    );
+}
+
+/// Emitted when the retention manager contract is initialized.
+///
+/// Privacy-safe: only the administrator address is disclosed; no retained
+/// record content is included.
+pub fn emit_retention_manager_initialized(e: &Env, admin: Address) {
+    e.events().publish(
+        (payroll_topic(), Symbol::new(e, "retention_mgr_init")),
+        admin,
+    );
+}
+
+/// Emitted when a retention record is registered for a company.
+///
+/// Privacy-safe: only the company id, opaque record id, record type, and the
+/// expiry timestamp are disclosed.
+pub fn emit_retention_record_registered(
+    e: &Env,
+    company_id: u64,
+    record_id: u64,
+    record_type: Symbol,
+    expires_at: u64,
+) {
+    e.events().publish(
+        (
+            payroll_topic(),
+            Symbol::new(e, "retention_record_registered"),
+        ),
+        (company_id, record_id, record_type, expires_at),
+    );
+}
+
+/// Emitted when an audit or challenge block is set or cleared on a retention
+/// record.
+///
+/// Privacy-safe: only the company id, opaque record id, block kind, and the
+/// resulting boolean are disclosed.
+pub fn emit_retention_block_changed(
+    e: &Env,
+    company_id: u64,
+    record_id: u64,
+    block_kind: Symbol,
+    blocked: bool,
+) {
+    e.events().publish(
+        (payroll_topic(), Symbol::new(e, "retention_block_changed")),
+        (company_id, record_id, block_kind, blocked),
+    );
+}
+
+/// Emitted when a retention record is pruned after its retention window
+/// elapsed.
+///
+/// Privacy-safe: only the company id, opaque record id, record type, and the
+/// prune timestamp are disclosed.
+pub fn emit_retention_record_pruned(
+    e: &Env,
+    company_id: u64,
+    record_id: u64,
+    record_type: Symbol,
+    pruned_at: u64,
+) {
+    e.events().publish(
+        (payroll_topic(), Symbol::new(e, "retention_record_pruned")),
+        (company_id, record_id, record_type, pruned_at),
     );
 }
 

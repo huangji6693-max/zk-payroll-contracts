@@ -34,7 +34,7 @@ fn setup() -> (Env, PayrollClient<'static>, Address, Address, Address) {
     let commitment = env.register_contract(None, SalaryCommitmentContract);
     let commitment_client = SalaryCommitmentContractClient::new(&env, &commitment);
     commitment_client.init_commitment_admin(&admin);
-    commitment_client.store_commitment(&employee, &BytesN::from_array(&env, &[0; 32]));
+    commitment_client.store_commitment(&employee, &BytesN::from_array(&env, &[1u8; 32]));
 
     let token = env.register_contract(None, Token);
     TokenClient::new(&env, &token).mint(&treasury, &10_000);

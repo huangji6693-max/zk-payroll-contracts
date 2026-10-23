@@ -1,4 +1,5 @@
 //! Contract module scaffold — copy this directory to bootstrap a new zk-payroll
+#![allow(deprecated)]
 //! module and replace every occurrence of `ModuleTemplate` / `module_template`
 //! with your module name.
 //!

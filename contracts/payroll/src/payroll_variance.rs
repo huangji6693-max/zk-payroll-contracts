@@ -21,7 +21,6 @@
 /// Everything here is privacy-safe: only aggregate totals and basis-point
 /// magnitudes are inspected. No salary amount breakdown, employee identity, or
 /// proof material is stored, surfaced, or emitted.
-
 use soroban_sdk::contracttype;
 
 /// Basis points in 100%: the largest configurable variance threshold.

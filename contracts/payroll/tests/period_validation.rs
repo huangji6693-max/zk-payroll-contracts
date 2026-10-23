@@ -37,7 +37,7 @@ pub const MAX_SEQUENCE_MONTHS_APROAD: u32 = 1;
 
 /// Parse a period identifier string into a `PeriodId`.
 ///
-/// Accepted format: `Y<YYYY>M<MM>`, e.g. `2024M01`. The year must be
+/// Accepted format: `YYYYM<MM>`, e.g. `2024M01`. The year must be
 /// four digits and the month must be in the range `1..=12`.
 ///
 /// Returns `Err(MissingPeriod)` for empty input and `Err(MalformedPeriod)`
@@ -53,12 +53,12 @@ pub fn parse_period_id(raw: &Option<String>) -> Result<PeriodId, PeriodValidatio
     }
 
     let bytes = raw.as_bytes();
-    if bytes[0] != b'Y' || bytes[5] != b'M' {
+    if bytes[4] != b'M' {
         return Err(PeriodValidationError::MalformedPeriod);
     }
 
-    let year_str = &raw[1..5];
-    let month_str = &raw[6..];
+    let year_str = &raw[0..4];
+    let month_str = &raw[5..];
 
     if !year_str.bytes().all(|b| b.is_ascii_digit()) {
         return Err(PeriodValidationError::MalformedPeriod);
@@ -67,8 +67,12 @@ pub fn parse_period_id(raw: &Option<String>) -> Result<PeriodId, PeriodValidatio
         return Err(PeriodValidationError::MalformedPeriod);
     }
 
-    let year: u16 = year_str.parse().map_err(|_| PeriodValidationError::MalformedPeriod)?;
-    let month: u8 = month_str.parse().map_err(|_| PeriodValidationError::MalformedPeriod)?;
+    let year: u16 = year_str
+        .parse()
+        .map_err(|_| PeriodValidationError::MalformedPeriod)?;
+    let month: u8 = month_str
+        .parse()
+        .map_err(|_| PeriodValidationError::MalformedPeriod)?;
 
     if month < 1 || month > 12 {
         return Err(PeriodValidationError::MalformedPeriod);
@@ -118,7 +122,7 @@ fn months_between(from: PeriodId, to: PeriodId) -> u32 {
     to_total - from_total
 }
 
-#[cfg_test]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -157,7 +161,6 @@ mod tests {
             "2024M1",
             "2024M13",
             "2024M00",
-            "2024M01",
             "XX2024M01",
             "2024M01a",
         ] {
@@ -179,10 +182,7 @@ mod tests {
 
     #[test]
     fn next_month_submission_is_accepted() {
-        let result = validate_submission_sequence(
-            &some("2024M02"),
-            Some(period(2024, 1)),
-        );
+        let result = validate_submission_sequence(&some("2024M02"), Some(period(2024, 1)));
         assert_eq!(result, Ok(period(2024, 2)));
     }
 
@@ -200,32 +200,23 @@ mod tests {
     #[test]
     fn period_too_far_ahead_is_rejected() {
         assert_eq!(
-            validate_submission_sequence(
-                &some("2024M03"),
-                Some(period(2024, 1)),
-            ),
-            Err(PeriodValidationError::PeriodTooForAwead)
+            validate_submission_sequence(&some("2024M03"), Some(period(2024, 1)),),
+            Err(PeriodValidationError::PeriodTooFarAwead)
         );
     }
 
     #[test]
     fn sequence_crosses_year_boundary() {
-        let result = validate_submission_sequence(
-            &some("2025M02"),
-            Some(period(2024, 12)),
-        );
-        assert_eq!(result, Ok(period(2025, 2)));
+        let result = validate_submission_sequence(&some("2025M01"), Some(period(2024, 12)));
+        assert_eq!(result, Ok(period(2025, 1)));
     }
 
     #[test]
     fn validation_errors_carry_no_payroll_values() {
         // Errors are marker variants with no fields, so their debug output
         // cannot leak amounts or employee identifiers.
-        let error = validate_submission_sequence(
-            &some("2024M01"),
-            Some(period(2024, 1)),
-        )
-        .unwrap_err();
+        let error =
+            validate_submission_sequence(&some("2024M01"), Some(period(2024, 1))).unwrap_err();
         let debug = format!("{error:?}");
         assert_eq!(debug, "NonSequentialPeriod");
     }

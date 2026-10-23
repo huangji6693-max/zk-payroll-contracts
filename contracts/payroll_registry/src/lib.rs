@@ -706,7 +706,9 @@ impl PayrollRegistry {
             .persistent()
             .has(&DataKey::Employee(company_id, employee.clone()))
         {
-            panic!("Employee commitment not found: cannot activate without commitment registration");
+            panic!(
+                "Employee commitment not found: cannot activate without commitment registration"
+            );
         }
 
         // Query the commitment contract to verify commitment is active
@@ -1049,7 +1051,10 @@ impl PayrollRegistryTrait for PayrollRegistry {
             .get::<DataKey, EmployeeStatus>(&DataKey::EmpStatus(company_id, employee))
             .unwrap_or(EmployeeStatus::Incomplete);
 
-        matches!(status, EmployeeStatus::Suspended | EmployeeStatus::Incomplete)
+        matches!(
+            status,
+            EmployeeStatus::Suspended | EmployeeStatus::Incomplete
+        )
     }
 
     fn is_employee_active(env: Env, company_id: u64, employee: Address) -> bool {

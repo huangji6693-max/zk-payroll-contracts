@@ -79,6 +79,10 @@ fn setup_system_no_auth<'a>(
     commitment_client.store_commitment(&employee, &commitment);
     registry.add_employee(&company_id, &employee, &commitment);
 
+    // The executor must be configured before withholding can be set.
+    executor.set_executor_admin(&Address::generate(env));
+    executor.set_asset_decimals(&executor.get_addresses().token, &7u32);
+
     // Issue #538: set zero-rate withholding config so execute_payment is unblocked
     let tax_addr = Address::generate(env);
     executor.set_withholding_config(
@@ -268,10 +272,7 @@ fn test_unsupported_asset_rejection() {
     // Remove the allowed asset to simulate unsupported asset
     env.mock_all_auths();
 
-    // Set a dummy admin to allow calling set_asset_allowed
-    let executor_admin = Address::generate(&env);
-    executor.set_executor_admin(&executor_admin);
-
+    // The executor admin was already configured by setup_system_no_auth.
     // Disallow the token asset
     executor.set_asset_allowed(&token_id, &false);
 

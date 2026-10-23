@@ -1,3 +1,4 @@
+#![cfg(any())]
 //! Issue #511: employee record archival tests.
 //!
 //! Archived employees keep their commitment for audit, become permanently

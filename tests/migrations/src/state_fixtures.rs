@@ -202,6 +202,7 @@ pub fn write_v1_payroll_run_fixture(
         nonce: seed_bytes32(env, run_id as u8),
         reconciliation_status: status,
         metadata_hash: seed_bytes32(env, 0xEE),
+        note_hash: seed_bytes32(env, 0xEF),
     };
 
     env.as_contract(payroll_id, || {

@@ -6,8 +6,8 @@
 // 3. Employers can respond with proof references or rejection reasons
 // 4. Challenges cannot be modified after resolution
 
-use soroban_sdk::{contracttype, Address, Env, Symbol};
 use crate::AuditError;
+use soroban_sdk::{contracttype, Address, Env, Symbol};
 
 /// Unique identifier for a challenge.
 pub type ChallengeId = u64;
@@ -181,11 +181,7 @@ pub fn create_challenge(
 
     // Allocate new challenge ID
     let counter_key = ChallengeDataKey::ChallengeCounter(company_id.clone());
-    let challenge_counter: ChallengeId = env
-        .storage()
-        .persistent()
-        .get(&counter_key)
-        .unwrap_or(0);
+    let challenge_counter: ChallengeId = env.storage().persistent().get(&counter_key).unwrap_or(0);
     let new_challenge_id = challenge_counter + 1;
 
     let challenge = AuditChallenge {
@@ -257,9 +253,7 @@ pub fn respond_to_challenge(
     // Check if challenge has already expired
     if env.ledger().sequence() > challenge.deadline_ledger {
         challenge.status = ChallengeStatus::Expired;
-        env.storage()
-            .persistent()
-            .set(&challenge_key, &challenge);
+        env.storage().persistent().set(&challenge_key, &challenge);
         return Err(AuditError::ChallengeExpired);
     }
 
@@ -291,12 +285,8 @@ pub fn respond_to_challenge(
     };
 
     // Persist response and update challenge
-    env.storage()
-        .persistent()
-        .set(&response_key, &response);
-    env.storage()
-        .persistent()
-        .set(&challenge_key, &challenge);
+    env.storage().persistent().set(&response_key, &response);
+    env.storage().persistent().set(&challenge_key, &challenge);
 
     // Emit response event
     env.events().publish(

@@ -76,9 +76,10 @@ fn setup_payroll(env: &Env) -> (PayrollClient<'_>, Address, Address, Address, Ad
     );
 
     commitment_client.set_payroll_operator(&payroll_id);
+    payroll_client.register_import_source(&treasury, &0u32);
 
     let employee = Address::generate(env);
-    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[0u8; 32]));
+    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[1u8; 32]));
 
     (payroll_client, admin, treasury, treasury_owner, employee)
 }
@@ -195,7 +196,7 @@ fn test_execute_after_close_rejected() {
 #[test]
 fn test_batch_process_payroll_respects_window() {
     let env = Env::default();
-    let (payroll, _admin, _treasury, _treasury_owner, employee) = setup_payroll(&env);
+    let (payroll, _admin, treasury, _treasury_owner, employee) = setup_payroll(&env);
     let admin = _admin;
     let period = Symbol::new(&env, "period_a");
     open_period_with_window(&payroll, &admin, &period);
@@ -204,15 +205,17 @@ fn test_batch_process_payroll_respects_window() {
     set_timestamp(&env, EXEC_START - 1);
     let (proofs, amounts, employees) = single_payment_batch(&env, &employee, 10_000);
     let nonce = test_nonce(&env, 6);
-    let result =
-        payroll.try_batch_process_payroll(&proofs, &amounts, &employees, &10_000, &nonce, &None);
+    let result = payroll.try_batch_process_payroll(
+        &proofs, &amounts, &employees, &10_000, &nonce, &None, &treasury,
+    );
     assert!(result.is_err());
 
     // Inside the window: batch_process_payroll should succeed.
     set_timestamp(&env, EXEC_START);
     let nonce2 = test_nonce(&env, 7);
-    let run_id =
-        payroll.batch_process_payroll(&proofs, &amounts, &employees, &10_000, &nonce2, &None);
+    let run_id = payroll.batch_process_payroll(
+        &proofs, &amounts, &employees, &10_000, &nonce2, &None, &treasury,
+    );
     assert!(payroll.get_run_counter() >= run_id);
 }
 

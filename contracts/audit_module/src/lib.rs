@@ -8,6 +8,13 @@ use soroban_sdk::{
 
 pub mod challenge;
 
+/// Maximum number of audit log records retained per company (#694).
+///
+/// The audit log counter stays monotonic for stable pagination, but only the
+/// most recent `MAX_AUDIT_LOG_ENTRIES` records are kept in storage; the
+/// oldest retained record is pruned as new entries are appended.
+pub const MAX_AUDIT_LOG_ENTRIES: u32 = 1_000;
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------
@@ -245,9 +252,10 @@ impl AuditModule {
         env.storage()
             .persistent()
             .set(&DataKey::AuditorKey(auditor.clone()), &record);
-        env.storage()
-            .persistent()
-            .set(&DataKey::AuditLifecycle(auditor.clone()), &AuditLifecycleStage::Granted);
+        env.storage().persistent().set(
+            &DataKey::AuditLifecycle(auditor.clone()),
+            &AuditLifecycleStage::Granted,
+        );
 
         payroll_events::emit_view_key_generated(&env, auditor, expiration_ledger);
 
@@ -309,9 +317,10 @@ impl AuditModule {
         env.storage()
             .persistent()
             .remove(&DataKey::AuditorKey(auditor.clone()));
-        env.storage()
-            .persistent()
-            .set(&DataKey::AuditLifecycle(auditor.clone()), &AuditLifecycleStage::Revoked);
+        env.storage().persistent().set(
+            &DataKey::AuditLifecycle(auditor.clone()),
+            &AuditLifecycleStage::Revoked,
+        );
 
         payroll_events::emit_audit_access_revoked(&env, admin, auditor);
 
@@ -346,9 +355,10 @@ impl AuditModule {
         env.storage()
             .persistent()
             .remove(&DataKey::AuditorKey(auditor.clone()));
-        env.storage()
-            .persistent()
-            .set(&DataKey::AuditLifecycle(auditor.clone()), &AuditLifecycleStage::Pruned);
+        env.storage().persistent().set(
+            &DataKey::AuditLifecycle(auditor.clone()),
+            &AuditLifecycleStage::Pruned,
+        );
         payroll_events::emit_audit_grant_pruned(&env, admin, auditor);
         Ok(())
     }
@@ -372,7 +382,10 @@ impl AuditModule {
     ///
     /// Returns `Ok(true)` if sequence is valid, or `Err(AuditError::InvalidEventSequence)`
     /// if out of order, empty, or improperly terminated.
-    pub fn verify_audit_event_sequence(env: Env, event_names: Vec<Symbol>) -> Result<bool, AuditError> {
+    pub fn verify_audit_event_sequence(
+        env: Env,
+        event_names: Vec<Symbol>,
+    ) -> Result<bool, AuditError> {
         if event_names.is_empty() {
             return Err(AuditError::InvalidEventSequence);
         }
@@ -409,12 +422,18 @@ impl AuditModule {
                 || event == sym_agg_gen
                 || event == sym_summary_exp
             {
-                if has_terminated || stage == AuditLifecycleStage::Revoked || stage == AuditLifecycleStage::Pruned {
+                if has_terminated
+                    || stage == AuditLifecycleStage::Revoked
+                    || stage == AuditLifecycleStage::Pruned
+                {
                     return Err(AuditError::InvalidEventSequence);
                 }
                 stage = AuditLifecycleStage::Active;
             } else if event == sym_expired || event == sym_revoked {
-                if has_terminated || stage == AuditLifecycleStage::Revoked || stage == AuditLifecycleStage::Pruned {
+                if has_terminated
+                    || stage == AuditLifecycleStage::Revoked
+                    || stage == AuditLifecycleStage::Pruned
+                {
                     return Err(AuditError::InvalidEventSequence);
                 }
                 stage = AuditLifecycleStage::Revoked;
@@ -506,9 +525,10 @@ impl AuditModule {
         env.storage()
             .persistent()
             .set(&DataKey::AuditorKey(auditor.clone()), &updated);
-        env.storage()
-            .persistent()
-            .set(&DataKey::AuditLifecycle(auditor.clone()), &AuditLifecycleStage::Active);
+        env.storage().persistent().set(
+            &DataKey::AuditLifecycle(auditor.clone()),
+            &AuditLifecycleStage::Active,
+        );
 
         env.events().publish(
             (Symbol::new(&env, "ViewKeyRefreshed"), admin, auditor),
@@ -1150,12 +1170,10 @@ impl AuditModule {
         // Keep the counter monotonic for stable pagination, while deleting the
         // oldest retained record before the next append.
         if counter >= MAX_AUDIT_LOG_ENTRIES {
-            env.storage()
-                .persistent()
-                .remove(&DataKey::AuditLog(
-                    company_id.clone(),
-                    counter - MAX_AUDIT_LOG_ENTRIES,
-                ));
+            env.storage().persistent().remove(&DataKey::AuditLog(
+                company_id.clone(),
+                counter - MAX_AUDIT_LOG_ENTRIES,
+            ));
         }
 
         let entry = AuditLogEntry {

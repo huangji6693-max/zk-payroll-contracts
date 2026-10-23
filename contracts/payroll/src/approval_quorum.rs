@@ -68,10 +68,7 @@ pub fn validate_quorum_config(config: &PayrollQuorumConfig) -> Result<(), Approv
 }
 
 /// Initializes an approval record for a payroll run.
-pub fn initialize_approval_record(
-    env: &Env,
-    payroll_run_id: u64,
-) -> PayrollApprovalRecord {
+pub fn initialize_approval_record(env: &Env, payroll_run_id: u64) -> PayrollApprovalRecord {
     PayrollApprovalRecord {
         payroll_run_id,
         confirmed_approvers: Vec::new(env),
@@ -175,7 +172,10 @@ mod tests {
         let is_ready = add_approval(&env, &mut record, &config, approver1.clone()).unwrap();
         assert!(!is_ready);
         assert!(!record.is_ready);
-        assert_eq!(validate_quorum_met(&record, &config), Err(ApprovalQuorumError::QuorumNotMet));
+        assert_eq!(
+            validate_quorum_met(&record, &config),
+            Err(ApprovalQuorumError::QuorumNotMet)
+        );
 
         // Second approval satisfies quorum
         let is_ready_now = add_approval(&env, &mut record, &config, approver2.clone()).unwrap();

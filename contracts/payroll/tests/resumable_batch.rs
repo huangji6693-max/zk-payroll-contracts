@@ -2,6 +2,7 @@
 
 #![cfg(test)]
 
+use ::token::Token;
 use payroll::{BatchCheckpointState, BatchResumeStatus, PayrollClient};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
@@ -13,7 +14,7 @@ fn setup(env: &Env) -> (Address, PayrollClient<'_>) {
 
     client.initialize(
         &admin,
-        &Address::generate(env),
+        &env.register_contract(None, Token),
         &Address::generate(env),
         &Address::generate(env),
         &Address::generate(env),
@@ -110,14 +111,11 @@ fn admin_can_resume_failed_batch_and_plan_clears() {
             &5,
         )
         .is_err());
-    assert!(client.get_batch_resume_plan(
-        &employer,
-        &batch_root,
-        &asset,
-        &execution_nonce,
-        &5
-    )
-    .can_resume);
+    assert!(
+        client
+            .get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &5)
+            .can_resume
+    );
 
     client.resume_payroll_batch(&admin, &employer, &batch_root, &asset, &execution_nonce, &5);
 
@@ -128,15 +126,12 @@ fn admin_can_resume_failed_batch_and_plan_clears() {
     assert_eq!(checkpoint.last_checkpoint_index, 2);
 
     // After the explicit resume the plan reports a plain resumable batch.
-    let plan = client.get_batch_resume_plan(
-        &employer,
-        &batch_root,
-        &asset,
-        &execution_nonce,
-        &5,
-    );
+    let plan = client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &5);
     assert_eq!(plan.status, BatchResumeStatus::Resumable);
-    assert!(!plan.can_resume, "already resumed; submit the bounded batch");
+    assert!(
+        !plan.can_resume,
+        "already resumed; submit the bounded batch"
+    );
     assert_eq!(plan.remaining_count, 3);
 }
 
@@ -168,26 +163,12 @@ fn resume_rejects_wrong_payment_count() {
 
     // Cursor (2) covers the whole batch when only 2 payments are expected.
     assert!(client
-        .try_resume_payroll_batch(
-            &admin,
-            &employer,
-            &batch_root,
-            &asset,
-            &execution_nonce,
-            &2,
-        )
+        .try_resume_payroll_batch(&admin, &employer, &batch_root, &asset, &execution_nonce, &2,)
         .is_err());
 
     // Zero and over-cap counts are rejected as well.
     assert!(client
-        .try_resume_payroll_batch(
-            &admin,
-            &employer,
-            &batch_root,
-            &asset,
-            &execution_nonce,
-            &0,
-        )
+        .try_resume_payroll_batch(&admin, &employer, &batch_root, &asset, &execution_nonce, &0,)
         .is_err());
     assert!(client
         .try_resume_payroll_batch(
@@ -204,14 +185,11 @@ fn resume_rejects_wrong_payment_count() {
     let checkpoint =
         client.get_batch_execution_checkpoint(&employer, &batch_root, &asset, &execution_nonce);
     assert!(checkpoint.failed);
-    assert!(client.get_batch_resume_plan(
-        &employer,
-        &batch_root,
-        &asset,
-        &execution_nonce,
-        &5
-    )
-    .can_resume);
+    assert!(
+        client
+            .get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &5)
+            .can_resume
+    );
 }
 
 #[test]
@@ -221,14 +199,7 @@ fn resume_rejects_unknown_checkpoint() {
     let (employer, batch_root, asset, execution_nonce) = checkpoint_identity(&env);
 
     assert!(client
-        .try_resume_payroll_batch(
-            &admin,
-            &employer,
-            &batch_root,
-            &asset,
-            &execution_nonce,
-            &3,
-        )
+        .try_resume_payroll_batch(&admin, &employer, &batch_root, &asset, &execution_nonce, &3,)
         .is_err());
 }
 
@@ -257,14 +228,7 @@ fn resume_rejects_completed_batch() {
     );
 
     assert!(client
-        .try_resume_payroll_batch(
-            &admin,
-            &employer,
-            &batch_root,
-            &asset,
-            &execution_nonce,
-            &3,
-        )
+        .try_resume_payroll_batch(&admin, &employer, &batch_root, &asset, &execution_nonce, &3,)
         .is_err());
 }
 
@@ -295,14 +259,7 @@ fn resume_rejects_mid_execution_checkpoint() {
     // A batch that is mid-execution (not failed) resumes by resubmitting the
     // bounded batch itself, not through the failure-recovery entrypoint.
     assert!(client
-        .try_resume_payroll_batch(
-            &admin,
-            &employer,
-            &batch_root,
-            &asset,
-            &execution_nonce,
-            &5,
-        )
+        .try_resume_payroll_batch(&admin, &employer, &batch_root, &asset, &execution_nonce, &5,)
         .is_err());
 }
 
@@ -339,22 +296,14 @@ fn admin_can_roll_back_remaining_batch_work() {
     assert!(!checkpoint.completed);
     assert!(!checkpoint.failed);
 
-    let plan =
-        client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &5);
+    let plan = client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &5);
     assert_eq!(plan.status, BatchResumeStatus::RolledBack);
     assert_eq!(plan.processed_count, 2);
     assert_eq!(plan.remaining_count, 3);
     assert!(!plan.can_resume);
 
     assert!(client
-        .try_resume_payroll_batch(
-            &admin,
-            &employer,
-            &batch_root,
-            &asset,
-            &execution_nonce,
-            &5,
-        )
+        .try_resume_payroll_batch(&admin, &employer, &batch_root, &asset, &execution_nonce, &5,)
         .is_err());
     assert!(client
         .try_record_batch_checkpoint_progress(
@@ -369,8 +318,7 @@ fn admin_can_roll_back_remaining_batch_work() {
         .is_err());
 
     client.cleanup_batch_checkpoint(&admin, &employer, &batch_root, &asset, &execution_nonce);
-    let plan =
-        client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &5);
+    let plan = client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &5);
     assert_eq!(plan.status, BatchResumeStatus::NotFound);
 }
 
@@ -391,13 +339,7 @@ fn non_admin_cannot_roll_back_batch() {
 
     let outsider = Address::generate(&env);
     assert!(client
-        .try_rollback_payroll_batch(
-            &outsider,
-            &employer,
-            &batch_root,
-            &asset,
-            &execution_nonce,
-        )
+        .try_rollback_payroll_batch(&outsider, &employer, &batch_root, &asset, &execution_nonce,)
         .is_err());
 
     let checkpoint =
@@ -442,8 +384,7 @@ fn plan_without_checkpoint_reports_not_found() {
     let (_admin, client) = setup(&env);
     let (employer, batch_root, asset, execution_nonce) = checkpoint_identity(&env);
 
-    let plan =
-        client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &4);
+    let plan = client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &4);
     assert_eq!(plan.status, BatchResumeStatus::NotFound);
     assert_eq!(plan.processed_count, 0);
     assert_eq!(plan.remaining_count, 0);
@@ -489,8 +430,7 @@ fn plan_reports_completed_batch() {
         &BatchCheckpointState::Completed,
     );
 
-    let plan =
-        client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &3);
+    let plan = client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &3);
     assert_eq!(plan.status, BatchResumeStatus::Completed);
     assert_eq!(plan.processed_count, 3);
     assert_eq!(plan.remaining_count, 0);
@@ -524,8 +464,7 @@ fn plan_flags_inconsistent_cursor() {
     // Caller believes the batch has only 2 payments: the persisted cursor (4)
     // is beyond it, so the plan flags the mismatch instead of exposing a
     // negative or wrapped remaining count.
-    let plan =
-        client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &2);
+    let plan = client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &2);
     assert!(!plan.cursor_consistent);
     assert_eq!(plan.remaining_count, 0);
     assert!(!plan.can_resume);
@@ -555,8 +494,7 @@ fn plan_reports_mid_execution_progress() {
         &BatchCheckpointState::PartiallyCheckpointed,
     );
 
-    let plan =
-        client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &5);
+    let plan = client.get_batch_resume_plan(&employer, &batch_root, &asset, &execution_nonce, &5);
     assert_eq!(plan.status, BatchResumeStatus::Resumable);
     assert_eq!(plan.processed_count, 3);
     assert_eq!(plan.remaining_count, 2);

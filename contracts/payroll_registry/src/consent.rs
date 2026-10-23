@@ -123,12 +123,7 @@ fn commitment_is_zero(e: &Env, hash: &BytesN<32>) -> bool {
 ///
 /// Requires `employer.require_auth()`.
 /// Emits `("registry", "consent_recorded")`.
-pub fn record_consent(
-    e: &Env,
-    employer: Address,
-    employee: Address,
-    commitment_hash: BytesN<32>,
-) {
+pub fn record_consent(e: &Env, employer: Address, employee: Address, commitment_hash: BytesN<32>) {
     employer.require_auth();
 
     if commitment_is_zero(e, &commitment_hash) {
@@ -184,16 +179,12 @@ pub fn revoke_consent(e: &Env, employer: Address, employee: Address) {
     employer.require_auth();
 
     let key = ConsentKey::EmployeeConsent(employer.clone(), employee.clone());
-    let mut record: ConsentCommitment = e
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| {
-            panic!(
-                "Consent record not found for this employee under this employer (ConsentError::{})",
-                ConsentError::ConsentNotFound.code()
-            )
-        });
+    let mut record: ConsentCommitment = e.storage().persistent().get(&key).unwrap_or_else(|| {
+        panic!(
+            "Consent record not found for this employee under this employer (ConsentError::{})",
+            ConsentError::ConsentNotFound.code()
+        )
+    });
 
     if matches!(record.state, ConsentState::Revoked) {
         panic!(
@@ -209,10 +200,7 @@ pub fn revoke_consent(e: &Env, employer: Address, employee: Address) {
     e.storage().persistent().set(&key, &record);
 
     e.events().publish(
-        (
-            symbol_short!("registry"),
-            Symbol::new(e, "consent_revoked"),
-        ),
+        (symbol_short!("registry"), Symbol::new(e, "consent_revoked")),
         (employer, employee, now),
     );
 }

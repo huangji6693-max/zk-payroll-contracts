@@ -114,9 +114,7 @@ pub fn last_event(env: &Env) -> (Address, SVec<Val>, Val) {
         .events()
         .last()
         .expect("expected an event to have been published");
-    let v0 = match &last.body {
-        ContractEventBody::V0(v0) => v0,
-    };
+    let ContractEventBody::V0(v0) = &last.body;
 
     let topics: Vec<Val> = v0
         .topics

@@ -19,9 +19,7 @@
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde::Deserialize;
-use stellar_xdr::curr::{
-    AccountId, Int128Parts, Limits, PublicKey, ReadXdr, ScAddress, ScVal, ScVec,
-};
+use stellar_xdr::{AccountId, Int128Parts, Limits, PublicKey, ReadXdr, ScAddress, ScVal, ScVec};
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -211,12 +209,16 @@ fn scaddress_to_strkey(addr: &ScAddress) -> Result<String> {
     match addr {
         ScAddress::Account(AccountId(PublicKey::PublicKeyTypeEd25519(bytes))) => {
             let pk = stellar_strkey::ed25519::PublicKey(bytes.0);
-            Ok(stellar_strkey::Strkey::PublicKeyEd25519(pk).to_string())
+            let encoded = stellar_strkey::Strkey::PublicKeyEd25519(pk).to_string();
+            Ok(encoded.as_str().to_owned())
         }
         ScAddress::Contract(hash) => {
             // Contract addresses are not expected here; return hex as fallback.
-            Ok(format!("C:{}", hex::encode(hash.0)))
+            Ok(format!("C:{}", hex::encode(hash.0.as_ref() as &[u8])))
         }
+        // Muxed accounts, claimable balances, liquidity pools and muxed
+        // contracts are never employee payout destinations.
+        other => bail!("Unsupported ScAddress variant for a payroll recipient: {other:?}"),
     }
 }
 
@@ -226,7 +228,7 @@ mod tests {
 
     #[test]
     fn decode_symbol_scval_roundtrip() {
-        use stellar_xdr::curr::WriteXdr;
+        use stellar_xdr::WriteXdr;
         let sym = ScVal::Symbol("PayrollProcessed".try_into().unwrap());
         let xdr = sym.to_xdr(Limits::none()).unwrap();
         let b64 = B64.encode(&xdr);

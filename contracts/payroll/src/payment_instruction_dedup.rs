@@ -50,7 +50,10 @@ pub fn record_or_reject_duplicate(
     period_id: u64,
     instruction_id: u64,
 ) -> Result<(), PaymentError> {
-    let key = PaymentInstructionDedupKey { period_id, instruction_id };
+    let key = PaymentInstructionDedupKey {
+        period_id,
+        instruction_id,
+    };
 
     if env
         .storage()
@@ -70,7 +73,10 @@ pub fn record_or_reject_duplicate(
 ///
 /// Intended for read-only preflight checks by dashboards and SDKs.
 pub fn is_duplicate(env: &Env, period_id: u64, instruction_id: u64) -> bool {
-    let key = PaymentInstructionDedupKey { period_id, instruction_id };
+    let key = PaymentInstructionDedupKey {
+        period_id,
+        instruction_id,
+    };
     env.storage()
         .persistent()
         .get::<_, bool>(&key)
@@ -80,51 +86,66 @@ pub fn is_duplicate(env: &Env, period_id: u64, instruction_id: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Payroll;
     use soroban_sdk::Env;
+
+    fn with_contract<T>(env: &Env, f: impl FnOnce() -> T) -> T {
+        let id = env.register(Payroll, ());
+        env.as_contract(&id, f)
+    }
 
     #[test]
     fn first_submission_succeeds_and_is_recorded() {
         let env = Env::default();
-        assert!(record_or_reject_duplicate(&env, 1, 100).is_ok());
-        assert!(is_duplicate(&env, 1, 100));
+        with_contract(&env, || {
+            assert!(record_or_reject_duplicate(&env, 1, 100).is_ok());
+            assert!(is_duplicate(&env, 1, 100));
+        });
     }
 
     #[test]
     fn second_submission_of_same_pair_is_rejected() {
         let env = Env::default();
-        record_or_reject_duplicate(&env, 1, 100).unwrap();
-        let result = record_or_reject_duplicate(&env, 1, 100);
-        assert_eq!(result, Err(PaymentError::EmployeeAlreadyPaid));
+        with_contract(&env, || {
+            record_or_reject_duplicate(&env, 1, 100).unwrap();
+            let result = record_or_reject_duplicate(&env, 1, 100);
+            assert_eq!(result, Err(PaymentError::EmployeeAlreadyPaid));
+        });
     }
 
     #[test]
     fn same_instruction_id_in_different_period_is_accepted() {
         let env = Env::default();
-        record_or_reject_duplicate(&env, 1, 100).unwrap();
-        // Period 2, same instruction_id 100 — different pair, must succeed.
-        assert!(record_or_reject_duplicate(&env, 2, 100).is_ok());
+        with_contract(&env, || {
+            record_or_reject_duplicate(&env, 1, 100).unwrap();
+            assert!(record_or_reject_duplicate(&env, 2, 100).is_ok());
+        });
     }
 
     #[test]
     fn different_instruction_id_in_same_period_is_accepted() {
         let env = Env::default();
-        record_or_reject_duplicate(&env, 1, 100).unwrap();
-        assert!(record_or_reject_duplicate(&env, 1, 101).is_ok());
+        with_contract(&env, || {
+            record_or_reject_duplicate(&env, 1, 100).unwrap();
+            assert!(record_or_reject_duplicate(&env, 1, 101).is_ok());
+        });
     }
 
     #[test]
     fn is_duplicate_returns_false_before_first_submission() {
         let env = Env::default();
-        assert!(!is_duplicate(&env, 99, 999));
+        with_contract(&env, || {
+            assert!(!is_duplicate(&env, 99, 999));
+        });
     }
 
     #[test]
     fn is_duplicate_does_not_modify_storage() {
         let env = Env::default();
-        // Calling is_duplicate twice should not flip the flag.
-        assert!(!is_duplicate(&env, 5, 50));
-        assert!(!is_duplicate(&env, 5, 50));
-        // First real submission should still succeed.
-        assert!(record_or_reject_duplicate(&env, 5, 50).is_ok());
+        with_contract(&env, || {
+            assert!(!is_duplicate(&env, 5, 50));
+            assert!(!is_duplicate(&env, 5, 50));
+            assert!(record_or_reject_duplicate(&env, 5, 50).is_ok());
+        });
     }
 }

@@ -2,7 +2,10 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, BytesN, Env,
+};
 
 use payroll_registry::consent::{
     get_consent, has_active_consent, record_consent, require_active_consent, revoke_consent,
@@ -24,15 +27,20 @@ fn test_record_consent_success() {
 
     let employer = Address::generate(&e);
     let employee = Address::generate(&e);
+    let __cid = e.register_contract(None, payroll_registry::PayrollRegistry);
 
     e.ledger().set_timestamp(1_000);
-    record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 1));
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 1))
+    });
 
-    let rec = get_consent(&e, &employer, &employee).expect("consent should exist");
+    let rec = e
+        .as_contract(&__cid, || get_consent(&e, &employer, &employee))
+        .expect("consent should exist");
     assert_eq!(rec.state, ConsentState::Active);
     assert_eq!(rec.employee, employee);
     assert_eq!(rec.employer, employer);
-    assert!(has_active_consent(&e, &employer, &employee));
+    assert!(e.as_contract(&__cid, || has_active_consent(&e, &employer, &employee)));
 }
 
 #[test]
@@ -42,17 +50,24 @@ fn test_revoke_consent() {
 
     let employer = Address::generate(&e);
     let employee = Address::generate(&e);
+    let __cid = e.register_contract(None, payroll_registry::PayrollRegistry);
 
     e.ledger().set_timestamp(1_000);
-    record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 2));
-    assert!(has_active_consent(&e, &employer, &employee));
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 2))
+    });
+    assert!(e.as_contract(&__cid, || has_active_consent(&e, &employer, &employee)));
 
     e.ledger().set_timestamp(2_000);
-    revoke_consent(&e, employer.clone(), employee.clone());
+    e.as_contract(&__cid, || {
+        revoke_consent(&e, employer.clone(), employee.clone())
+    });
 
-    let rec = get_consent(&e, &employer, &employee).unwrap();
+    let rec = e
+        .as_contract(&__cid, || get_consent(&e, &employer, &employee))
+        .unwrap();
     assert_eq!(rec.state, ConsentState::Revoked);
-    assert!(!has_active_consent(&e, &employer, &employee));
+    assert!(!e.as_contract(&__cid, || has_active_consent(&e, &employer, &employee)));
 }
 
 #[test]
@@ -62,9 +77,10 @@ fn test_no_consent_blocks_enrollment() {
 
     let employer = Address::generate(&e);
     let employee = Address::generate(&e);
+    let __cid = e.register_contract(None, payroll_registry::PayrollRegistry);
 
     // No consent recorded — require_active_consent must panic
-    require_active_consent(&e, &employer, &employee);
+    e.as_contract(&__cid, || require_active_consent(&e, &employer, &employee));
 }
 
 #[test]
@@ -74,18 +90,27 @@ fn test_consent_replacement() {
 
     let employer = Address::generate(&e);
     let employee = Address::generate(&e);
+    let __cid = e.register_contract(None, payroll_registry::PayrollRegistry);
 
     e.ledger().set_timestamp(500);
-    record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 10));
-    let first = get_consent(&e, &employer, &employee).unwrap();
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 10))
+    });
+    let first = e
+        .as_contract(&__cid, || get_consent(&e, &employer, &employee))
+        .unwrap();
     assert_eq!(first.commitment_hash, commitment(&e, 10));
     assert_eq!(first.created_at, 500);
 
     // Replace the consent with a new commitment
     e.ledger().set_timestamp(1_500);
-    record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 20));
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 20))
+    });
 
-    let second = get_consent(&e, &employer, &employee).unwrap();
+    let second = e
+        .as_contract(&__cid, || get_consent(&e, &employer, &employee))
+        .unwrap();
     assert_eq!(second.commitment_hash, commitment(&e, 20));
     assert_eq!(second.state, ConsentState::Active);
     // created_at is preserved from the original recording
@@ -100,12 +125,17 @@ fn test_revoked_consent_blocks_require() {
 
     let employer = Address::generate(&e);
     let employee = Address::generate(&e);
+    let __cid = e.register_contract(None, payroll_registry::PayrollRegistry);
 
-    record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 5));
-    revoke_consent(&e, employer.clone(), employee.clone());
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 5))
+    });
+    e.as_contract(&__cid, || {
+        revoke_consent(&e, employer.clone(), employee.clone())
+    });
 
     // After revocation, has_active_consent is false
-    assert!(!has_active_consent(&e, &employer, &employee));
+    assert!(!e.as_contract(&__cid, || has_active_consent(&e, &employer, &employee)));
 }
 
 #[test]
@@ -116,12 +146,17 @@ fn test_require_active_consent_fails_after_revocation() {
 
     let employer = Address::generate(&e);
     let employee = Address::generate(&e);
+    let __cid = e.register_contract(None, payroll_registry::PayrollRegistry);
 
-    record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 7));
-    revoke_consent(&e, employer.clone(), employee.clone());
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 7))
+    });
+    e.as_contract(&__cid, || {
+        revoke_consent(&e, employer.clone(), employee.clone())
+    });
 
     // Must panic after revocation
-    require_active_consent(&e, &employer, &employee);
+    e.as_contract(&__cid, || require_active_consent(&e, &employer, &employee));
 }
 
 #[test]
@@ -132,10 +167,17 @@ fn test_double_revoke_fails() {
 
     let employer = Address::generate(&e);
     let employee = Address::generate(&e);
+    let __cid = e.register_contract(None, payroll_registry::PayrollRegistry);
 
-    record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 8));
-    revoke_consent(&e, employer.clone(), employee.clone());
-    revoke_consent(&e, employer.clone(), employee.clone()); // must panic
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 8))
+    });
+    e.as_contract(&__cid, || {
+        revoke_consent(&e, employer.clone(), employee.clone())
+    });
+    e.as_contract(&__cid, || {
+        revoke_consent(&e, employer.clone(), employee.clone())
+    }); // must panic
 }
 
 #[test]
@@ -146,14 +188,12 @@ fn test_zero_commitment_hash_rejected() {
 
     let employer = Address::generate(&e);
     let employee = Address::generate(&e);
+    let __cid = e.register_contract(None, payroll_registry::PayrollRegistry);
 
     // Zero hash should be rejected
-    record_consent(
-        &e,
-        employer,
-        employee,
-        BytesN::from_array(&e, &[0u8; 32]),
-    );
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer, employee, BytesN::from_array(&e, &[0u8; 32]))
+    });
 }
 
 #[test]
@@ -163,14 +203,21 @@ fn test_reconsentment_after_revocation() {
 
     let employer = Address::generate(&e);
     let employee = Address::generate(&e);
+    let __cid = e.register_contract(None, payroll_registry::PayrollRegistry);
 
     e.ledger().set_timestamp(100);
-    record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 1));
-    revoke_consent(&e, employer.clone(), employee.clone());
-    assert!(!has_active_consent(&e, &employer, &employee));
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 1))
+    });
+    e.as_contract(&__cid, || {
+        revoke_consent(&e, employer.clone(), employee.clone())
+    });
+    assert!(!e.as_contract(&__cid, || has_active_consent(&e, &employer, &employee)));
 
     // Re-consent after revocation should succeed
     e.ledger().set_timestamp(200);
-    record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 2));
-    assert!(has_active_consent(&e, &employer, &employee));
+    e.as_contract(&__cid, || {
+        record_consent(&e, employer.clone(), employee.clone(), commitment(&e, 2))
+    });
+    assert!(e.as_contract(&__cid, || has_active_consent(&e, &employer, &employee)));
 }

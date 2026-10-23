@@ -39,12 +39,12 @@ mod upgrade_simulation {
     /// All-zero 32-byte commitment — valid placeholder in tests that do not
     /// exercise proof verification.
     fn zero_commitment(env: &Env) -> BytesN<32> {
-        BytesN::from_array(env, &[0u8; 32])
+        BytesN::from_array(env, &[1u8; 32])
     }
 
     /// All-zero 32-byte blinding factor.
     fn zero_blinding(env: &Env) -> BytesN<32> {
-        BytesN::from_array(env, &[0u8; 32])
+        BytesN::from_array(env, &[1u8; 32])
     }
 
     /// Minimal VerificationKey with all-zero curve points and a 3-element IC
@@ -292,7 +292,7 @@ mod upgrade_simulation {
         assert_eq!(v1, 1, "UP-05: initial version must be 1");
 
         // First update — simulates normal operation pre-upgrade.
-        let mut c2_bytes = [0u8; 32];
+        let mut c2_bytes = [2u8; 32];
         c2_bytes[0] = 1;
         let c2 = BytesN::from_array(&env, &c2_bytes);
         client.update_commitment(&employee, &c2);
@@ -304,7 +304,7 @@ mod upgrade_simulation {
         client.set_payroll_operator(&new_op);
 
         // Post-upgrade update — version must continue from v2, not reset.
-        let mut c3_bytes = [0u8; 32];
+        let mut c3_bytes = [3u8; 32];
         c3_bytes[0] = 2;
         let c3 = BytesN::from_array(&env, &c3_bytes);
         client.update_commitment(&employee, &c3);
@@ -396,7 +396,7 @@ mod upgrade_simulation {
         let company_id = registry.register_company(&admin, &treasury);
 
         let alice_commitment = zero_commitment(&env);
-        let mut bob_bytes = [0u8; 32];
+        let mut bob_bytes = [1u8; 32];
         bob_bytes[31] = 0xFF;
         let bob_commitment = BytesN::from_array(&env, &bob_bytes);
 
@@ -435,7 +435,7 @@ mod upgrade_simulation {
         let token = Address::generate(&env);
 
         let addrs = ContractAddresses {
-            registry,
+            registry: registry.clone(),
             commitment,
             verifier,
             token,
@@ -476,7 +476,7 @@ mod upgrade_simulation {
         let token = env.register_contract(None, Token);
 
         let addrs = ContractAddresses {
-            registry,
+            registry: registry.clone(),
             commitment,
             verifier,
             token: token.clone(),
@@ -513,7 +513,7 @@ mod upgrade_simulation {
             "UP-09: treasury asset must remain allowlisted"
         );
         assert!(
-            report.treasury_asset_decimals_configured,
+            report.treasury_decimals_configured,
             "UP-09: treasury decimals must remain configured"
         );
 
@@ -529,7 +529,9 @@ mod upgrade_simulation {
         );
 
         // Payroll state remains writable after the preflight, so the upgrade
-        // does not strand an in-flight payroll.
+        // does not strand an in-flight payroll. Only one period may be open at
+        // a time, so close the first one before creating the next.
+        executor.close_period(&company_id, &1);
         let next_period = executor.create_period(&company_id);
         assert_eq!(
             next_period.period_id, 2,

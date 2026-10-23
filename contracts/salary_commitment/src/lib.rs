@@ -18,6 +18,19 @@ use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env, Sy
 // Unauthorized role actions fail with `require_auth()` / explicit role checks.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Zero-value commitment guards (issue #851)
+// ---------------------------------------------------------------------------
+
+/// The smallest salary value that may be committed.
+///
+/// A salary commitment to zero is invalid: it authorises a payroll run that
+/// pays an employee nothing while still consuming a proof, a nullifier and a
+/// treasury reservation. The guard is enforced where the salary value is
+/// visible (`compute_commitment`) and where a commitment value is written
+/// (the all-zero "no commitment" sentinel).
+pub const MIN_COMMITTABLE_SALARY: u64 = 1;
+
 /// Commitment data structure
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -188,6 +201,9 @@ impl SalaryCommitmentContract {
     ///
     /// The commitment value must be globally unique (issue #242): it cannot
     /// already be bound to any employee, active or archived.
+    ///
+    /// The all-zero commitment is rejected (issue #851): it is the "no
+    /// commitment" sentinel, not a commitment to any salary.
     pub fn store_commitment(
         env: Env,
         employee: Address,
@@ -195,6 +211,7 @@ impl SalaryCommitmentContract {
     ) -> SalaryCommitment {
         Self::require_not_paused(&env);
         Self::require_admin(&env);
+        Self::validate_commitment_value(&env, &commitment);
         Self::register_commitment_uniqueness(&env, &commitment);
 
         let timestamp = env.ledger().timestamp();
@@ -225,6 +242,9 @@ impl SalaryCommitmentContract {
     ///
     /// Fails if the employee's commitment is currently locked (see
     /// `lock_commitment_updates` / `unlock_commitment_updates`).
+    ///
+    /// The all-zero commitment is rejected (issue #851) for the same reason as
+    /// in `store_commitment`.
     pub fn update_commitment(
         env: Env,
         employee: Address,
@@ -244,6 +264,7 @@ impl SalaryCommitmentContract {
             .get(&key)
             .expect("Commitment not found");
 
+        Self::validate_commitment_value(&env, &new_commitment);
         Self::register_commitment_uniqueness(&env, &new_commitment);
 
         // Archive current commitment before replacing
@@ -446,7 +467,10 @@ impl SalaryCommitmentContract {
     /// # Panics
     /// - Panics with `"Reference ID must be 1-256 characters"` if empty, all-whitespace, or > 256 chars.
     /// - Panics with `"Employee identifier contains invalid characters: must be printable ASCII"` if non-printable.
-    pub fn normalize_employee_identifier(env: Env, identifier: soroban_sdk::String) -> soroban_sdk::String {
+    pub fn normalize_employee_identifier(
+        env: Env,
+        identifier: soroban_sdk::String,
+    ) -> soroban_sdk::String {
         Self::normalize_employee_identifier_internal(&env, &identifier)
     }
 
@@ -495,11 +519,7 @@ impl SalaryCommitmentContract {
             if b < 32 || b > 126 {
                 panic!("Employee identifier contains invalid characters: must be printable ASCII");
             }
-            out_buf[i] = if b.is_ascii_lowercase() {
-                b - 32
-            } else {
-                b
-            };
+            out_buf[i] = if b.is_ascii_lowercase() { b - 32 } else { b };
         }
 
         let normalized_str = core::str::from_utf8(&out_buf[..trimmed_len])
@@ -552,11 +572,7 @@ impl SalaryCommitmentContract {
             if b < 32 || b > 126 {
                 return None;
             }
-            out_buf[i] = if b.is_ascii_lowercase() {
-                b - 32
-            } else {
-                b
-            };
+            out_buf[i] = if b.is_ascii_lowercase() { b - 32 } else { b };
         }
 
         let normalized_str = core::str::from_utf8(&out_buf[..trimmed_len]).ok()?;
@@ -606,7 +622,9 @@ impl SalaryCommitmentContract {
         }
 
         // Store both forward and reverse mappings using canonical normalized form
-        env.storage().persistent().set(&employee_key, &normalized_id);
+        env.storage()
+            .persistent()
+            .set(&employee_key, &normalized_id);
         env.storage().persistent().set(&index_key, &employee);
 
         payroll_events::emit_reference_id_set(&env, employee, normalized_id);
@@ -658,7 +676,14 @@ impl SalaryCommitmentContract {
     }
 
     /// Compute a commitment hash for a salary and blinding factor.
+    ///
+    /// A zero salary is rejected (issue #851): a zero-value salary can never
+    /// be committed, verified, or paid out. The rejection is privacy-safe —
+    /// it never echoes the salary, the blinding factor, or the resulting
+    /// commitment value.
     pub fn compute_commitment(env: Env, salary: u64, blinding_factor: BytesN<32>) -> BytesN<32> {
+        Self::validate_salary_amount(salary);
+
         let mut preimage = soroban_sdk::Bytes::new(&env);
         preimage.extend_from_array(&salary.to_le_bytes());
         let blinding_bytes: [u8; 32] = blinding_factor.into();
@@ -668,16 +693,34 @@ impl SalaryCommitmentContract {
     }
 
     /// Verify a commitment matches a salary (with proof)
+    ///
+    /// A zero claimed salary never verifies (issue #851): no valid salary
+    /// commitment is derived from a zero salary, so the check fails closed
+    /// instead of trapping.
     pub fn verify_commitment(
         env: Env,
         employee: Address,
         claimed_salary: u64,
         blinding_factor: BytesN<32>,
     ) -> bool {
+        if claimed_salary < MIN_COMMITTABLE_SALARY {
+            return false;
+        }
+
         let stored = Self::get_commitment(env.clone(), employee);
         let computed = Self::compute_commitment(env, claimed_salary, blinding_factor);
 
         stored.commitment == computed && !stored.revoked
+    }
+
+    /// Whether `commitment` is a structurally valid salary commitment value.
+    ///
+    /// Read-only preflight for SDKs and dashboards: returns `false` for the
+    /// all-zero "no commitment" sentinel (issue #851) and for any value that
+    /// could never be produced by `compute_commitment`. No salary, employee,
+    /// or blinding data is read or returned.
+    pub fn is_valid_commitment_value(env: Env, commitment: BytesN<32>) -> bool {
+        !Self::commitment_is_zero(&env, &commitment)
     }
 
     // -----------------------------------------------------------------------
@@ -849,6 +892,10 @@ impl SalaryCommitmentContract {
         previous: &SalaryCommitment,
         new_commitment: &BytesN<32>,
     ) -> SalaryCommitment {
+        // Issue #851: the all-zero commitment is not a valid salary
+        // commitment, so it can never be rotated in either.
+        Self::validate_commitment_value(env, new_commitment);
+
         // #242: the retired value stays permanently reserved, so a settled
         // payroll record can always be matched to the commitment it used and
         // the value can never be re-bound to another employee.
@@ -887,6 +934,39 @@ impl SalaryCommitmentContract {
         env.storage().persistent().set(&key, &true);
     }
 
+    // ── Issue #851: zero-value salary commitments are invalid ────────────────
+
+    /// Return `true` when every byte of `commitment` is zero.
+    ///
+    /// The all-zero value is the "no commitment" sentinel used across the
+    /// contract suite (the same sentinel `payroll_registry::consent`
+    /// rejects). It is not a valid salary commitment: it commits to nothing,
+    /// so an employee enrolled with it could never prove a salary.
+    fn commitment_is_zero(env: &Env, commitment: &BytesN<32>) -> bool {
+        commitment == &BytesN::from_array(env, &[0u8; 32])
+    }
+
+    /// Reject the all-zero commitment value (issue #851).
+    ///
+    /// Privacy-safe: the rejected value is never echoed back, and no salary,
+    /// employee, or blinding material is included in the message.
+    fn validate_commitment_value(env: &Env, commitment: &BytesN<32>) {
+        if Self::commitment_is_zero(env, commitment) {
+            panic!(
+                "Invalid salary commitment: the zero commitment is not a valid salary commitment (issue #851)"
+            );
+        }
+    }
+
+    /// Reject a zero salary value (issue #851).
+    ///
+    /// Privacy-safe: the rejected amount is never echoed back.
+    fn validate_salary_amount(salary: u64) {
+        if salary < MIN_COMMITTABLE_SALARY {
+            panic!("Invalid salary amount: a zero-value salary cannot be committed (issue #851)");
+        }
+    }
+
     fn archive_commitment(env: &Env, employee: &Address, commitment: &BytesN<32>, version: u32) {
         let mut idx: u32 = 0;
         loop {
@@ -909,7 +989,40 @@ impl SalaryCommitmentContract {
 mod tests {
     use super::*;
     use soroban_sdk::testutils::{Address as _, Events};
-    use soroban_sdk::{Env, IntoVal, Symbol, TryIntoVal};
+    use soroban_sdk::{xdr, Env, IntoVal, Symbol, TryFromVal, TryIntoVal, Val};
+
+    /// Decodes the topics of the recorded contract event at `index` into host values.
+    fn event_topics(env: &Env, index: usize) -> soroban_sdk::Vec<Val> {
+        let recorded = env.events().all();
+        let Some(event) = recorded.events().get(index) else {
+            panic!("no contract event recorded at index {index}");
+        };
+        let xdr::ContractEventBody::V0(body) = &event.body else {
+            panic!("expected a v0 contract event body");
+        };
+        let mut topics = soroban_sdk::Vec::new(env);
+        for topic in body.topics.iter() {
+            topics.push_back(Val::try_from_val(env, topic).expect("invalid event topic"));
+        }
+        topics
+    }
+
+    /// Number of contract events recorded by the most recent invocation.
+    fn event_count(env: &Env) -> usize {
+        env.events().all().events().len()
+    }
+
+    /// Decodes the data payload of the recorded contract event at `index`.
+    fn event_data(env: &Env, index: usize) -> Val {
+        let recorded = env.events().all();
+        let Some(event) = recorded.events().get(index) else {
+            panic!("no contract event recorded at index {index}");
+        };
+        let xdr::ContractEventBody::V0(body) = &event.body else {
+            panic!("expected a v0 contract event body");
+        };
+        Val::try_from_val(env, &body.data).expect("invalid event data")
+    }
 
     fn setup_with_admin() -> (Env, soroban_sdk::Address, Address) {
         let env = Env::default();
@@ -935,13 +1048,11 @@ mod tests {
         assert_eq!(result.commitment, commitment);
         assert_eq!(result.version, 1);
 
-        let events = env.events().all();
-        assert_eq!(events.len(), 1);
-        let event = events.get(0).unwrap();
-        assert_eq!(event.1.len(), 2);
-        let sym0: Symbol = event.1.get(0).unwrap().try_into_val(&env.clone()).unwrap();
+        let topics = event_topics(&env, 0);
+        assert_eq!(topics.len(), 2);
+        let sym0: Symbol = topics.get(0).unwrap().try_into_val(&env.clone()).unwrap();
         assert_eq!(sym0, Symbol::new(&env, "CommitmentUpdated"));
-        let addr0: Address = event.1.get(1).unwrap().try_into_val(&env.clone()).unwrap();
+        let addr0: Address = topics.get(1).unwrap().try_into_val(&env.clone()).unwrap();
         assert_eq!(addr0, employee);
     }
 
@@ -955,10 +1066,9 @@ mod tests {
         let updated = BytesN::from_array(&env, &[2u8; 32]);
 
         client.store_commitment(&employee, &initial);
-        let before = env.events().all().len();
         let result = client.update_commitment(&employee, &updated);
-        let after = env.events().all().len();
-        assert_eq!(after, before + 1);
+        // soroban-sdk 28 only exposes events from the most recent invocation.
+        assert_eq!(event_count(&env), 1);
 
         assert_eq!(result.commitment, updated);
         assert_eq!(result.version, 2);
@@ -1013,34 +1123,20 @@ mod tests {
         // Set operator first
         client.set_payroll_operator(&operator);
 
-        let before = env.events().all().len();
         // Remove the operator
         client.remove_payroll_operator();
-        let events = env.events().all();
-        assert_eq!(events.len(), before + 1);
+        // soroban-sdk 28 only exposes events from the most recent invocation.
+        assert_eq!(event_count(&env), 1);
 
-        // Find an event whose topics/data include our removal symbol and operator
-        let mut found_symbol = false;
-        let mut found_operator = false;
-        for ev in events.iter() {
-            for i in 0..ev.1.len() {
-                if let Ok(s) = ev.1.get(i).unwrap().try_into_val::<Symbol>(&env.clone()) {
-                    if s == Symbol::new(&env, "PayrollOperatorRemoved") {
-                        found_symbol = true;
-                    }
-                }
-                if let Ok(a) = ev.1.get(i).unwrap().try_into_val::<Address>(&env.clone()) {
-                    if a == operator {
-                        found_operator = true;
-                    }
-                }
-            }
-        }
-        assert!(found_symbol, "PayrollOperatorRemoved event not emitted");
-        assert!(
-            found_operator,
-            "Removed operator address not present in event data"
-        );
+        let topics = event_topics(&env, 0);
+        assert_eq!(topics.len(), 1);
+        let symbol: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(symbol, Symbol::new(&env, "PayrollOperatorRemoved"));
+
+        let payload: soroban_sdk::Vec<Val> = event_data(&env, 0).try_into_val(&env).unwrap();
+        assert_eq!(payload.len(), 1);
+        let removed: Address = payload.get(0).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(removed, operator);
     }
 
     /// A commitment value that was rotated out (archived) can never be
@@ -1758,6 +1854,150 @@ mod tests {
         }]);
 
         client.set_employee_reference_id(&employee, &reference_id);
+    }
+
+    // ── Issue #851: zero-value salary commitments are invalid ────────────────
+
+    /// The all-zero commitment is the "no commitment" sentinel and must never
+    /// be stored as an employee's salary commitment.
+    #[test]
+    #[should_panic(expected = "Invalid salary commitment")]
+    fn test_store_zero_commitment_rejected() {
+        let (env, contract_id, _admin) = setup_with_admin();
+        let client = SalaryCommitmentContractClient::new(&env, &contract_id);
+
+        let employee = Address::generate(&env);
+        let zero = BytesN::from_array(&env, &[0u8; 32]);
+
+        client.store_commitment(&employee, &zero);
+    }
+
+    /// A zero commitment may not be introduced by an update either: an update
+    /// is a compensation change, not a "clear the commitment" operation.
+    #[test]
+    #[should_panic(expected = "Invalid salary commitment")]
+    fn test_update_to_zero_commitment_rejected() {
+        let (env, contract_id, _admin) = setup_with_admin();
+        let client = SalaryCommitmentContractClient::new(&env, &contract_id);
+
+        let employee = Address::generate(&env);
+        let valid = BytesN::from_array(&env, &[7u8; 32]);
+        let zero = BytesN::from_array(&env, &[0u8; 32]);
+
+        client.store_commitment(&employee, &valid);
+        client.update_commitment(&employee, &zero);
+    }
+
+    /// The rotation paths share the same guard, so a locked (approved)
+    /// commitment cannot be rotated into the zero sentinel either.
+    #[test]
+    #[should_panic(expected = "Invalid salary commitment")]
+    fn test_rotate_to_zero_commitment_rejected() {
+        let (env, contract_id, _admin) = setup_with_admin();
+        let client = SalaryCommitmentContractClient::new(&env, &contract_id);
+
+        let employee = Address::generate(&env);
+        let valid = BytesN::from_array(&env, &[9u8; 32]);
+        let zero = BytesN::from_array(&env, &[0u8; 32]);
+
+        client.store_commitment(&employee, &valid);
+        client.lock_commitment_updates(&employee);
+        client.rotate_approved_commitment(&employee, &zero);
+    }
+
+    /// A zero salary can never be turned into a commitment.
+    #[test]
+    #[should_panic(expected = "Invalid salary amount")]
+    fn test_compute_commitment_rejects_zero_salary() {
+        let (env, _contract_id, _admin) = setup_with_admin();
+        let blinding = BytesN::from_array(&env, &[3u8; 32]);
+
+        SalaryCommitmentContract::compute_commitment(env, 0u64, blinding);
+    }
+
+    /// A zero claimed salary never verifies — the check fails closed instead
+    /// of trapping, and never reveals whether a commitment exists.
+    #[test]
+    fn test_verify_commitment_rejects_zero_salary() {
+        let (env, contract_id, _admin) = setup_with_admin();
+        let client = SalaryCommitmentContractClient::new(&env, &contract_id);
+
+        let employee = Address::generate(&env);
+        let blinding = BytesN::from_array(&env, &[3u8; 32]);
+        let commitment = client.compute_commitment(&5_000u64, &blinding);
+        client.store_commitment(&employee, &commitment);
+
+        assert!(client.verify_commitment(&employee, &5_000u64, &blinding));
+        assert!(
+            !client.verify_commitment(&employee, &0u64, &blinding),
+            "a zero claimed salary must never verify"
+        );
+    }
+
+    /// Success path: a positive salary commits, stores, and verifies.
+    #[test]
+    fn test_positive_salary_commitment_round_trip() {
+        let (env, contract_id, _admin) = setup_with_admin();
+        let client = SalaryCommitmentContractClient::new(&env, &contract_id);
+
+        let employee = Address::generate(&env);
+        let blinding = BytesN::from_array(&env, &[11u8; 32]);
+
+        let commitment = client.compute_commitment(&5_000u64, &blinding);
+        assert!(client.is_valid_commitment_value(&commitment));
+
+        let stored = client.store_commitment(&employee, &commitment);
+        assert_eq!(stored.commitment, commitment);
+        assert!(client.verify_commitment(&employee, &5_000u64, &blinding));
+    }
+
+    /// Boundary: the smallest committable salary (1) is accepted and
+    /// verifies, while one below it (0) is rejected.
+    #[test]
+    fn test_smallest_committable_salary_is_accepted() {
+        let (env, contract_id, _admin) = setup_with_admin();
+        let client = SalaryCommitmentContractClient::new(&env, &contract_id);
+
+        let employee = Address::generate(&env);
+        let blinding = BytesN::from_array(&env, &[13u8; 32]);
+
+        let commitment = client.compute_commitment(&MIN_COMMITTABLE_SALARY, &blinding);
+        client.store_commitment(&employee, &commitment);
+        assert!(client.verify_commitment(&employee, &MIN_COMMITTABLE_SALARY, &blinding));
+
+        let zero_result = client.try_compute_commitment(&0u64, &blinding);
+        assert!(
+            zero_result.is_err(),
+            "a salary one below the minimum must be rejected"
+        );
+    }
+
+    /// Boundary: the smallest non-zero commitment byte pattern is still a
+    /// valid commitment value — only the all-zero sentinel is rejected.
+    #[test]
+    fn test_lowest_non_zero_commitment_value_is_accepted() {
+        let (env, contract_id, _admin) = setup_with_admin();
+        let client = SalaryCommitmentContractClient::new(&env, &contract_id);
+
+        let employee = Address::generate(&env);
+        let mut lowest_bytes = [0u8; 32];
+        lowest_bytes[31] = 1;
+        let lowest_non_zero = BytesN::from_array(&env, &lowest_bytes);
+
+        assert!(client.is_valid_commitment_value(&lowest_non_zero));
+        let stored = client.store_commitment(&employee, &lowest_non_zero);
+        assert_eq!(stored.commitment, lowest_non_zero);
+    }
+
+    /// The read-only preflight reports the zero sentinel as invalid without
+    /// touching storage or exposing any value.
+    #[test]
+    fn test_is_valid_commitment_value_rejects_zero_sentinel() {
+        let (env, contract_id, _admin) = setup_with_admin();
+        let client = SalaryCommitmentContractClient::new(&env, &contract_id);
+
+        let zero = BytesN::from_array(&env, &[0u8; 32]);
+        assert!(!client.is_valid_commitment_value(&zero));
     }
 
     /// Property-style uniqueness coverage over a bounded set of commitments.

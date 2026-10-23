@@ -80,6 +80,10 @@ fn setup_system<'a>(
 
     executor.create_period(&company_id);
 
+    // The executor must be configured before withholding can be set.
+    executor.set_executor_admin(&Address::generate(env));
+    executor.set_asset_decimals(&addresses.token, &7u32);
+
     // Issue #538: set zero-rate withholding config so execute_payment is unblocked
     let tax_addr = Address::generate(env);
     executor.set_withholding_config(

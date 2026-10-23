@@ -279,11 +279,8 @@ fn review_decisions_store_complete_reasons() {
     assert_eq!(review.reason, reason);
 
     let changes_reason = Symbol::new(&env, "missing_docs");
-    fx.client.request_changes_payroll_run(
-        &reviewer(&fx, 1),
-        &run_id,
-        &changes_reason,
-    );
+    fx.client
+        .request_changes_payroll_run(&reviewer(&fx, 1), &run_id, &changes_reason);
     let review = fx.client.get_run_review(&run_id).unwrap();
     assert_eq!(review.decision, payroll::ReviewDecision::ChangesRequested);
     assert_eq!(review.reason, changes_reason);

@@ -1,5 +1,5 @@
-use soroban_sdk::{contracttype, Address, Env};
 use shared_errors::AuthError;
+use soroban_sdk::{contracttype, Address, Env};
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]

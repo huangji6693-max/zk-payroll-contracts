@@ -11,7 +11,7 @@ mod tests {
     use salary_commitment::{SalaryCommitmentContract, SalaryCommitmentContractClient};
     use soroban_sdk::{
         testutils::{Address as _, Ledger as _},
-        Address, BytesN, Env, Symbol, Vec,
+        Address, BytesN, Env, String, Symbol, Vec,
     };
     use token::{Token, TokenClient};
 
@@ -52,34 +52,37 @@ mod tests {
         token_client: TokenClient<'a>,
         payroll_client: PayrollClient<'a>,
         commitment_client: SalaryCommitmentContractClient<'a>,
+        source: Address,
     }
 
     fn setup(env: &Env) -> TestContext {
+        env.mock_all_auths();
         env.ledger().set_sequence_number(100);
         env.ledger().set_timestamp(1000);
 
-        let token = Address::random(env);
-        let admin = Address::random(env);
-        let treasury = Address::random(env);
-        let verifier = Address::random(env);
-        let commitment_contract = Address::random(env);
+        let token = env.register_contract(None, Token);
+        let admin = Address::generate(env);
+        let treasury = Address::generate(env);
+        let verifier = env.register_contract(None, ProofVerifier);
+        let commitment_contract = env.register_contract(None, SalaryCommitmentContract);
 
         let token_client = TokenClient::new(env, &token);
         token_client.initialize(
-            &Address::random(env),
+            &Address::generate(env),
             &9u32,
-            &"USDC".into(),
-            &"USD Coin".into(),
+            &String::from_str(env, "USDC"),
+            &String::from_str(env, "USD Coin"),
         );
 
-        let payroll = Address::random(env);
+        let payroll = env.register_contract(None, Payroll);
         let payroll_client = PayrollClient::new(env, &payroll);
 
         let verifier_client = ProofVerifierClient::new(env, &verifier);
-        verifier_client.initialize(&mock_vk(env));
+        verifier_client.init_verifier_admin(&Address::generate(env));
+        verifier_client.initialize_verifier(&mock_vk(env));
 
         let commitment_client = SalaryCommitmentContractClient::new(env, &commitment_contract);
-        commitment_client.initialize(&Address::random(env));
+        commitment_client.init_commitment_admin(&Address::generate(env));
 
         token_client.mint(&treasury, &100000000i128);
 
@@ -89,24 +92,29 @@ mod tests {
             &verifier,
             &commitment_contract,
             &treasury,
-            &Address::random(env),
+            &Address::generate(env),
         );
 
-        let alice = Address::random(env);
-        let bob = Address::random(env);
+        commitment_client.set_payroll_operator(&payroll);
+
+        let source = Address::generate(env);
+        payroll_client.register_import_source(&source, &0u32);
+
+        let alice = Address::generate(env);
+        let bob = Address::generate(env);
 
         // Register employees
         let mut alice_blinding = [0u8; 32];
         alice_blinding[31] = 123u8;
         let alice_commitment = commitment_client
             .compute_commitment(&5000u64, &BytesN::from_array(env, &alice_blinding));
-        commitment_client.register_employee(&alice, &alice_commitment);
+        commitment_client.store_commitment(&alice, &alice_commitment);
 
         let mut bob_blinding = [0u8; 32];
         bob_blinding[31] = 124u8;
         let bob_commitment =
             commitment_client.compute_commitment(&3000u64, &BytesN::from_array(env, &bob_blinding));
-        commitment_client.register_employee(&bob, &bob_commitment);
+        commitment_client.store_commitment(&bob, &bob_commitment);
 
         TestContext {
             env: env.clone(),
@@ -117,6 +125,7 @@ mod tests {
             token_client,
             payroll_client,
             commitment_client,
+            source,
         }
     }
 
@@ -124,8 +133,6 @@ mod tests {
     fn test_payroll_with_duplicate_employee_should_fail() {
         let env = Env::default();
         let ctx = setup(&env);
-
-        ctx.admin.require_auth_for_next_call();
 
         // Attempt to pay Alice twice in the same batch
         let proofs = Vec::from_array(&env, [mock_proof(&env), mock_proof(&env)]);
@@ -139,6 +146,7 @@ mod tests {
             &10000i128,
             &test_nonce(&env, 1),
             &None,
+            &ctx.source,
         );
 
         assert!(result.is_err(), "Duplicate employee should be rejected");
@@ -148,8 +156,6 @@ mod tests {
     fn test_payroll_with_no_duplicates_succeeds() {
         let env = Env::default();
         let ctx = setup(&env);
-
-        ctx.admin.require_auth_for_next_call();
 
         let proofs = Vec::from_array(&env, [mock_proof(&env), mock_proof(&env)]);
         let amounts = Vec::from_array(&env, [5000i128, 3000i128]);
@@ -162,6 +168,7 @@ mod tests {
             &8000i128,
             &test_nonce(&env, 2),
             &None,
+            &ctx.source,
         );
 
         assert!(run_id > 0, "Payroll run should be created successfully");
@@ -182,8 +189,6 @@ mod tests {
         let env = Env::default();
         let ctx = setup(&env);
 
-        ctx.admin.require_auth_for_next_call();
-
         // First run: pay Alice
         let proofs1 = Vec::from_array(&env, [mock_proof(&env)]);
         let amounts1 = Vec::from_array(&env, [5000i128]);
@@ -196,13 +201,13 @@ mod tests {
             &5000i128,
             &test_nonce(&env, 3),
             &None,
+            &ctx.source,
         );
 
         assert!(run_id_1 > 0);
 
         env.ledger().set_sequence_number(200);
-
-        ctx.admin.require_auth_for_next_call();
+        ctx.commitment_client.unlock_commitment_updates(&ctx.alice);
 
         // Second run: pay Alice again (different run, should be allowed)
         let proofs2 = Vec::from_array(&env, [mock_proof(&env)]);
@@ -216,6 +221,7 @@ mod tests {
             &6000i128,
             &test_nonce(&env, 4),
             &None,
+            &ctx.source,
         );
 
         assert!(run_id_2 > run_id_1, "Second run should have higher ID");

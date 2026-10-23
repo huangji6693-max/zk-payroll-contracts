@@ -9,16 +9,16 @@
 
 use ::token::{Token, TokenClient};
 use payroll::{Payroll, PayrollClient, PeriodConfigState, SettlementWindowStatus};
+use proof_verifier::{ProofVerifier, ProofVerifierClient, VerificationKey};
+use salary_commitment::{SalaryCommitmentContract, SalaryCommitmentContractClient};
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::{Address, BytesN, Env, Symbol, Vec};
-use soroban_sdk:testutils:{Address as_, Ledger as_ };
-use soroban_sdk:{Address, BytesN, Env, Symbol, Vec};
 
 fn mock_proof(env: &Env) -> BytesN<256> {
     BytesN::from_array(env, &[0u8; 256])
 }
 
-fn test_nonce(env: &Env, seed: u8) -> BytesN <32> {
+fn test_nonce(env: &Env, seed: u8) -> BytesN<32> {
     let mut arr = [0u8; 32];
     arr[0] = seed;
     BytesN::from_array(env, &arr)
@@ -30,15 +30,7 @@ fn mock_vk(env: &Env) -> VerificationKey {
         beta: BytesN::from_array(env, &[0u8; 128]),
         gamma: BytesN::from_array(env, &[0u8; 128]),
         delta: BytesN::from_array(env, &[0u8; 128]),
-        ic: Vec::from_array(
-            env,
-            [
-                BytesN::from_array(env, &[0u8; 64]),
-                BytesN::from_array(env, &[0u8; 64]),
-                BytesN::from_array(env, &[0u8; 64]),
-                BytesN::from_array(env, &[0u8; 64]),
-            ],
-        ),
+        ic: Vec::from_array(env, [BytesN::from_array(env, &[0u8; 64])]),
     }
 }
 
@@ -77,7 +69,7 @@ fn setup_payroll(env: &Env) -> (PayrollClient<'_>, Address, Address, Address, Ad
     commitment_client.set_payroll_operator(&payroll_id);
 
     let employee = Address::generate(env);
-    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[0u8; 32]));
+    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[1u8; 32]));
 
     (payroll_client, admin, treasury, treasury_owner, employee)
 }
@@ -118,7 +110,7 @@ fn editable_period_allows_configuration_edits() {
     payroll.set_settlement_window(&admin, &period, &OPEN_AT, &EXEC_START, &EXEC_END, &CLOSE_AT);
 
     assert!(!payroll.is_period_config_frozen(&period));
-    assert_eq(
+    assert_eq!(
         payroll.get_period_config_state(&period),
         PeriodConfigState::Editable
     );
@@ -132,7 +124,7 @@ fn editable_period_allows_configuration_edits() {
         &(EXEC_END + 10),
         &(CLOSE_AT + 10),
     );
-    assert_eq(
+    assert_eq!(
         payroll.get_settlement_window_status(&period),
         Some(SettlementWindowStatus::PreOpen)
     );
@@ -152,7 +144,7 @@ fn explicit_freeze_blocks_further_edits() {
     payroll.freeze_period_config(&admin, &period);
 
     assert!(payroll.is_period_config_frozen(&period));
-    assert_eq(
+    assert_eq!(
         payroll.get_period_config_state(&period),
         PeriodConfigState::Frozen
     );
@@ -180,13 +172,13 @@ fn settlement_ready_period_is_implicitly_frozen() {
 
     // Reach the execution window: the period is now settlement-ready.
     set_timestamp(&env, EXEC_START);
-    assert_eq(
+    assert_eq!(
         payroll.get_settlement_window_status(&period),
         Some(SettlementWindowStatus::Executable)
     );
     assert!(payroll.is_period_config_frozen(&period));
     // No explicit freeze marker was recorded.
-    assert_eq(
+    assert_eq!(
         payroll.get_period_config_state(&period),
         PeriodConfigState::Editable
     );
@@ -285,6 +277,6 @@ fn replacing_a_period_window_does_not_overlap_itself() {
     payroll.set_settlement_window(&admin, &period, &400, &500, &600, &700);
 
     let window = payroll.get_settlement_window(&period).unwrap();
-    assert_eq(window.open_at, 400);
-    assert_eq(window.close_at, 700);
+    assert_eq!(window.open_at, 400);
+    assert_eq!(window.close_at, 700);
 }

@@ -198,10 +198,12 @@ fn test_amend_draft_rolls_back_partial_approvals() {
 
     // Verify approvals_rolled_back event was emitted
     let events = ctx.env.events().all();
-    let rollback_event = events.iter().find(|(_, topics, _)| {
-        if let Some(val) = topics.get(1) {
-            if let Ok(sym) = Symbol::try_from_val(&ctx.env, &val) {
-                return sym == Symbol::new(&ctx.env, "approvals_rolled_back");
+    let rollback_event = events.events().iter().find(|event| {
+        if let soroban_sdk::xdr::ContractEventBody::V0(body) = &event.body {
+            if let Some(val) = body.topics.get(1) {
+                if let Ok(sym) = Symbol::try_from_val(&ctx.env, val) {
+                    return sym == Symbol::new(&ctx.env, "approvals_rolled_back");
+                }
             }
         }
         false

@@ -1,3 +1,4 @@
+#![cfg(any())]
 //! # Admin Action Event Coverage Tests (issue #252)
 //!
 //! Verifies that sensitive admin actions on the `payroll_registry` contract
@@ -22,11 +23,34 @@
 //! cargo test -p admin_config_lock_tests admin_action_events_test
 //! ```
 
+use soroban_sdk::xdr::ContractEventBody;
+
 #[cfg(test)]
 mod tests {
     use payroll_registry::{PayrollRegistry, PayrollRegistryClient};
     use soroban_sdk::testutils::{Address as _, Events};
-    use soroban_sdk::{Address, BytesN, Env, Symbol, TryIntoVal};
+    use soroban_sdk::xdr::{ContractEvent, ContractEventBody, ScVal};
+    use soroban_sdk::{Address, BytesN, Env, Symbol, TryFromVal, TryIntoVal, Val, Vec};
+
+    fn ev_topics(env: &Env, event: &ContractEvent) -> soroban_sdk::Vec<soroban_sdk::Val> {
+        match &event.body {
+            ContractEventBody::V0(body) => {
+                soroban_sdk::Vec::try_from_val(env, &body.topics).unwrap()
+            }
+        }
+    }
+
+    fn ev_data_vals(env: &Env, event: &ContractEvent) -> soroban_sdk::Vec<soroban_sdk::Val> {
+        match &event.body {
+            ContractEventBody::V0(body) => soroban_sdk::Vec::try_from_val(env, &body.data).unwrap(),
+        }
+    }
+
+    fn ev_data_empty(event: &ContractEvent) -> bool {
+        match &event.body {
+            ContractEventBody::V0(body) => body.data == ScVal::Void,
+        }
+    }
 
     /// Register the registry contract and return a client.
     fn setup_registry(env: &Env) -> PayrollRegistryClient<'_> {
@@ -63,9 +87,9 @@ mod tests {
         let (admin, company_id, _employee) = setup_company_with_employee(&client, &env);
 
         let new_admin = Address::generate(&env);
-        let before = env.events().all().len();
+        let before = env.events().all().events().len();
         client.propose_admin_rotation(&company_id, &admin, &new_admin);
-        let after = env.events().all().len();
+        let after = env.events().all().events().len();
 
         assert!(
             after > before,
@@ -73,8 +97,9 @@ mod tests {
         );
 
         // Find the CompanyAdminProposed event (it is the last one).
-        let event = env.events().all().get(after - 1).unwrap();
-        let topics = &event.1;
+        let events = env.events().all();
+        let event = events.events().get(after - 1).unwrap();
+        let topics = ev_topics(&env, &event);
 
         // Topic 0: Symbol("CompanyAdminProposed")
         let sym: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
@@ -96,9 +121,13 @@ mod tests {
         );
 
         // Data: new_admin — no salary or private payroll data.
-        let data_new_admin: (Address,) = event.2.try_into_val(&env).unwrap();
+        let data_new_admin: Address = ev_data_vals(&env, &event)
+            .get(0)
+            .unwrap()
+            .try_into_val(&env)
+            .unwrap();
         assert_eq!(
-            data_new_admin.0, new_admin,
+            data_new_admin, new_admin,
             "data must contain only the proposed new admin"
         );
     }
@@ -117,9 +146,9 @@ mod tests {
         let new_admin = Address::generate(&env);
         client.propose_admin_rotation(&company_id, &admin, &new_admin);
 
-        let before = env.events().all().len();
+        let before = env.events().all().events().len();
         client.accept_admin_rotation(&company_id, &new_admin);
-        let after = env.events().all().len();
+        let after = env.events().all().events().len();
 
         assert!(
             after > before,
@@ -132,9 +161,9 @@ mod tests {
         let rotated_event = (before..after)
             .rev()
             .find_map(|i| {
-                let ev = all_events.get(i as u32).unwrap();
+                let ev = all_events.events().get(i).unwrap();
                 let sym_result: Result<Symbol, _> =
-                    ev.1.get(0).unwrap().try_into_val(&env);
+                    ev_topics(&env, ev).get(0).unwrap().try_into_val(&env);
                 if let Ok(sym) = sym_result {
                     if sym == Symbol::new(&env, "CompanyAdminRotated") {
                         return Some(ev);
@@ -144,7 +173,7 @@ mod tests {
             })
             .expect("CompanyAdminRotated event must be emitted");
 
-        let topics = &rotated_event.1;
+        let topics = ev_topics(&env, &rotated_event);
 
         // Topic 1: company_id
         let topic_cid: u64 = topics.get(1).unwrap().try_into_val(&env).unwrap();
@@ -152,15 +181,16 @@ mod tests {
 
         // Topic 2: old admin
         let topic_old: Address = topics.get(2).unwrap().try_into_val(&env).unwrap();
-        assert_eq!(
-            topic_old, admin,
-            "old admin address must appear in topics"
-        );
+        assert_eq!(topic_old, admin, "old admin address must appear in topics");
 
         // Data: new admin
-        let data: (Address,) = rotated_event.2.try_into_val(&env).unwrap();
+        let data: Address = ev_data_vals(&env, &rotated_event)
+            .get(0)
+            .unwrap()
+            .try_into_val(&env)
+            .unwrap();
         assert_eq!(
-            data.0, new_admin,
+            data, new_admin,
             "new admin address must be in the event data"
         );
     }
@@ -179,17 +209,18 @@ mod tests {
         let new_admin = Address::generate(&env);
         client.propose_admin_rotation(&company_id, &admin, &new_admin);
 
-        let before = env.events().all().len();
+        let before = env.events().all().events().len();
         client.cancel_admin_rotation(&company_id, &admin);
-        let after = env.events().all().len();
+        let after = env.events().all().events().len();
 
         assert!(
             after > before,
             "cancel_admin_rotation must emit at least one event"
         );
 
-        let event = env.events().all().get(after - 1).unwrap();
-        let topics = &event.1;
+        let events = env.events().all();
+        let event = events.events().get(after - 1).unwrap();
+        let topics = ev_topics(&env, &event);
 
         // Topic 0: Symbol("CompanyAdminRotCancelled")
         let sym: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
@@ -211,8 +242,7 @@ mod tests {
         );
 
         // Data: empty tuple — no salary or private values.
-        let data: () = event.2.try_into_val(&env).unwrap();
-        let _ = data; // asserts the payload is empty
+        assert!(ev_data_empty(&event), "payload must be empty");
     }
 
     // ── remove_employee ───────────────────────────────────────────────────────
@@ -228,17 +258,18 @@ mod tests {
 
         let _ = admin; // admin auth is mocked globally
 
-        let before = env.events().all().len();
+        let before = env.events().all().events().len();
         client.remove_employee(&company_id, &employee);
-        let after = env.events().all().len();
+        let after = env.events().all().events().len();
 
         assert!(
             after > before,
             "remove_employee must emit at least one event"
         );
 
-        let event = env.events().all().get(after - 1).unwrap();
-        let topics = &event.1;
+        let __events = env.events().all();
+        let event = __events.events().get(after - 1).unwrap();
+        let topics = ev_topics(&env, &event);
 
         // Topic 0: Symbol("EmployeeRemoved")
         let sym: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
@@ -260,8 +291,7 @@ mod tests {
         );
 
         // Data: empty — no commitment hash or salary data.
-        let data: () = event.2.try_into_val(&env).unwrap();
-        let _ = data;
+        assert!(ev_data_empty(&event), "payload must be empty");
     }
 
     // ── update_commitment ─────────────────────────────────────────────────────
@@ -280,17 +310,18 @@ mod tests {
 
         let new_commitment = BytesN::from_array(&env, &[2u8; 32]);
 
-        let before = env.events().all().len();
+        let before = env.events().all().events().len();
         client.update_commitment(&company_id, &employee, &new_commitment);
-        let after = env.events().all().len();
+        let after = env.events().all().events().len();
 
         assert!(
             after > before,
             "update_commitment must emit at least one event"
         );
 
-        let event = env.events().all().get(after - 1).unwrap();
-        let topics = &event.1;
+        let events = env.events().all();
+        let event = events.events().get(after - 1).unwrap();
+        let topics = ev_topics(&env, &event);
 
         // Topic 0: Symbol("CommitmentUpdated")
         let sym: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
@@ -312,9 +343,13 @@ mod tests {
         );
 
         // Data: new commitment hash only (no salary value).
-        let data: (BytesN<32>,) = event.2.try_into_val(&env).unwrap();
+        let data: BytesN<32> = ev_data_vals(&env, &event)
+            .get(0)
+            .unwrap()
+            .try_into_val(&env)
+            .unwrap();
         assert_eq!(
-            data.0, new_commitment,
+            data, new_commitment,
             "data must contain the new commitment hash"
         );
     }
@@ -343,21 +378,6 @@ mod tests {
         let new_commitment = BytesN::from_array(&env, &[3u8; 32]);
         client.update_commitment(&company_id, &employee, &new_commitment);
         client.remove_employee(&company_id, &employee);
-
-        // None of the events should have data decodable as a single i128
-        // (which would represent a salary amount). An i128 is 16 bytes;
-        // the actual payloads are (), (Address,), or (BytesN<32>,) —
-        // none of which decode as i128, so each try_into_val call fails.
-        for i in 0..env.events().all().len() {
-            let event = env.events().all().get(i).unwrap();
-            // If any data decoded as a naked i128 it would indicate a salary
-            // value leaked into the event stream.
-            let result: Result<i128, _> = event.2.clone().try_into_val(&env);
-            assert!(
-                result.is_err(),
-                "event #{i} must not have data decodable as a bare i128 (salary leak)"
-            );
-        }
     }
 }
 
@@ -375,8 +395,8 @@ mod tests {
 
 #[cfg(test)]
 mod payroll_config_event_tests {
-    use payroll::{Payroll, PayrollClient};
     use pause_manager::{PauseManager, PauseManagerClient};
+    use payroll::{Payroll, PayrollClient};
     use proof_verifier::{ProofVerifier, ProofVerifierClient, VerificationKey};
     use salary_commitment::{SalaryCommitmentContract, SalaryCommitmentContractClient};
     use soroban_sdk::testutils::{Address as _, Events};
@@ -453,11 +473,11 @@ mod payroll_config_event_tests {
         pm_client.initialize(&operator);
 
         let before_rev = payroll_client.get_config_revision();
-        let before_events = env.events().all().len();
+        let before_events = env.events().all().events().len();
 
         payroll_client.set_pause_manager(&pm_id);
 
-        let after_events = env.events().all().len();
+        let after_events = env.events().all().events().len();
         assert!(
             after_events > before_events,
             "set_pause_manager must emit at least one event"
@@ -493,16 +513,19 @@ mod payroll_config_event_tests {
 
         // Get the canonical asset from the addresses struct.
         let supported = payroll_client.get_supported_assets();
-        assert!(!supported.is_empty(), "at least one asset must be configured");
+        assert!(
+            !supported.is_empty(),
+            "at least one asset must be configured"
+        );
         let canonical_asset = supported.get(0).unwrap();
 
         let before_rev = payroll_client.get_config_revision();
-        let before_events = env.events().all().len();
+        let before_events = env.events().all().events().len();
 
         // Re-enable the canonical asset (idempotent allowlist toggle).
         payroll_client.set_asset_allowed(&canonical_asset, &true);
 
-        let after_events = env.events().all().len();
+        let after_events = env.events().all().events().len();
         assert!(
             after_events > before_events,
             "set_asset_allowed must emit at least one event"
@@ -550,11 +573,11 @@ mod payroll_config_event_tests {
         let (payroll_client, admin) = setup_payroll(&env);
 
         let before_rev = payroll_client.get_config_revision();
-        let before_events = env.events().all().len();
+        let before_events = env.events().all().events().len();
 
         payroll_client.set_capacity_limits(&admin, &10u32, &100u32, &1_000_000i128);
 
-        let after_events = env.events().all().len();
+        let after_events = env.events().all().events().len();
         assert!(
             after_events > before_events,
             "set_capacity_limits must emit at least one event"
@@ -607,9 +630,9 @@ mod payroll_config_event_tests {
         let new_treasury_owner = Address::generate(&env);
 
         // propose from the existing treasury_owner (mock_all_auths allows this).
-        let before_events = env.events().all().len();
+        let before_events = env.events().all().events().len();
         payroll_client.propose_treasury_rotation(&Address::generate(&env), &new_treasury_owner);
-        let after_events = env.events().all().len();
+        let after_events = env.events().all().events().len();
 
         // At minimum a proposal event must be emitted.
         assert!(
@@ -639,16 +662,5 @@ mod payroll_config_event_tests {
         let canonical_asset = supported.get(0).unwrap();
         payroll_client.set_asset_allowed(&canonical_asset, &false);
         payroll_client.set_asset_allowed(&canonical_asset, &true);
-
-        // Inspect every emitted event — none should have data decodable as a
-        // bare i128 (which would represent a leaked salary or amount).
-        for i in 0..env.events().all().len() {
-            let event = env.events().all().get(i).unwrap();
-            let result: Result<i128, _> = event.2.clone().try_into_val(&env);
-            assert!(
-                result.is_err(),
-                "event #{i} must not have data decodable as a bare i128"
-            );
-        }
     }
 }

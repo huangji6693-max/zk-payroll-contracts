@@ -111,10 +111,7 @@ pub fn require_stalled(e: &Env, run_id: u64) -> StalledRunRecoveryAssessment {
     match assess(e, run_id) {
         Some(assessment) => assessment,
         None => {
-            let exists = e
-                .storage()
-                .persistent()
-                .has(&DataKey::PendingRun(run_id));
+            let exists = e.storage().persistent().has(&DataKey::PendingRun(run_id));
             if exists {
                 panic!(
                     "Payroll run is not stalled: the run has been pending for less than {} seconds; \

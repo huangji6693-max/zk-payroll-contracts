@@ -79,6 +79,7 @@ fn test_unauthorized_prepare_payroll_run_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);
@@ -147,6 +148,7 @@ fn test_unauthorized_batch_process_payroll_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);
@@ -189,6 +191,7 @@ fn test_unauthorized_batch_process_payroll_fails() {
         &1000i128,
         &test_nonce(&env, 1),
         &None::<BytesN<32>>,
+        &Address::generate(&env),
     );
 }
 
@@ -215,6 +218,7 @@ fn test_unauthorized_cancel_payroll_run_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);
@@ -269,6 +273,7 @@ fn test_unauthorized_commit_draft_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);
@@ -398,7 +403,7 @@ fn test_unauthorized_set_employee_status_fails() {
             args: (
                 company_id,
                 employee.clone(),
-                payroll_registry::EmployeeStatus::Inactive,
+                payroll_registry::EmployeeStatus::Offboarded,
             )
                 .into_val(&env),
             sub_invokes: &[],
@@ -408,7 +413,7 @@ fn test_unauthorized_set_employee_status_fails() {
     registry.set_employee_status(
         &company_id,
         &employee,
-        &payroll_registry::EmployeeStatus::Inactive,
+        &payroll_registry::EmployeeStatus::Offboarded,
     );
 }
 
@@ -779,6 +784,7 @@ fn test_unauthorized_approve_emergency_withdrawal_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
     let token_client = TokenClient::new(&env, &token_id);
 
     let payroll_id = env.register_contract(None, Payroll);
@@ -830,6 +836,7 @@ fn test_unauthorized_request_emergency_withdrawal_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);
@@ -879,6 +886,7 @@ fn test_unauthorized_approve_payroll_run_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);
@@ -930,6 +938,7 @@ fn test_unauthorized_reject_payroll_run_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);
@@ -982,6 +991,7 @@ fn test_unauthorized_request_changes_payroll_run_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);
@@ -1034,6 +1044,7 @@ fn test_unauthorized_add_reviewer_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);
@@ -1072,6 +1083,7 @@ fn test_revoked_reviewer_cannot_approve_fails() {
     commitment_client_init.init_commitment_admin(&admin);
 
     let token_id = env.register_contract(None, Token);
+    TokenClient::new(&env, &token_id).mint(&treasury, &1_000_000i128);
 
     let payroll_id = env.register_contract(None, Payroll);
     let payroll_client = PayrollClient::new(&env, &payroll_id);

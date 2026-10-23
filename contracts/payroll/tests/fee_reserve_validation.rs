@@ -57,10 +57,7 @@ fn test_insufficient_reserve_rejected() {
         "expected InsufficientFeeReserve, got {:?}",
         result
     );
-    assert_eq!(
-        result.unwrap_err().as_str(),
-        "insufficient_fee_reserve"
-    );
+    assert_eq!(result.unwrap_err().as_str(), "insufficient_fee_reserve");
 }
 
 // ── Test 3 ─────────────────────────────────────────────────────────────────────
@@ -164,7 +161,10 @@ fn test_error_code_strings() {
         .as_str(),
         "insufficient_fee_reserve"
     );
-    assert_eq!(FeeReserveError::InvalidFeeConfig.as_str(), "invalid_fee_config");
+    assert_eq!(
+        FeeReserveError::InvalidFeeConfig.as_str(),
+        "invalid_fee_config"
+    );
     assert_eq!(
         FeeReserveError::NonPositivePayrollTotal.as_str(),
         "non_positive_payroll_total"

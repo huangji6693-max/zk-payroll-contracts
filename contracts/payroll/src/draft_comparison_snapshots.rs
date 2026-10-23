@@ -183,9 +183,7 @@ pub fn get_change_summary(comparison: &ComparisonResult) -> String {
 }
 
 /// Validate that a snapshot collection doesn't exceed limits.
-pub fn validate_snapshot_limit(
-    existing_count: u32,
-) -> Result<(), DraftComparisonError> {
+pub fn validate_snapshot_limit(existing_count: u32) -> Result<(), DraftComparisonError> {
     if existing_count >= MAX_SNAPSHOTS_PER_DRAFT {
         return Err(DraftComparisonError::SnapshotLimitExceeded);
     }
@@ -211,7 +209,16 @@ mod tests {
             vals.push_back(String::from_str(env, v));
         }
 
-        create_snapshot(env, id, 1, &captured_by, keys, vals, String::from_str(env, "test")).unwrap()
+        create_snapshot(
+            env,
+            id,
+            1,
+            &captured_by,
+            keys,
+            vals,
+            String::from_str(env, "test"),
+        )
+        .unwrap()
     }
 
     #[test]

@@ -3,7 +3,8 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    symbol_short, testutils::Address as _, Address, BytesN, Env, String, Symbol,
+    symbol_short, testutils::Address as _, testutils::Ledger as _, Address, BytesN, Env, String,
+    Symbol,
 };
 
 use payroll::{
@@ -14,6 +15,11 @@ use payroll::{
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn in_contract<T>(e: &Env, f: impl FnOnce() -> T) -> T {
+    let id = e.register(payroll::Payroll, ());
+    e.as_contract(&id, f)
+}
 
 fn setup_contract(e: &Env, admin: &Address) {
     let fake_addr = Address::generate(e);
@@ -40,25 +46,26 @@ fn make_run_id(e: &Env) -> BytesN<32> {
 fn test_amendment_validation_success() {
     let e = Env::default();
     e.mock_all_auths();
+    in_contract(&e, || {
+        let admin = Address::generate(&e);
+        setup_contract(&e, &admin);
 
-    let admin = Address::generate(&e);
-    setup_contract(&e, &admin);
+        let run_id = make_run_id(&e);
 
-    let run_id = make_run_id(&e);
+        e.ledger().set_timestamp(5_000);
+        validate_run_amendment(
+            &e,
+            admin.clone(),
+            run_id.clone(),
+            String::from_str(&e, "Correcting employee count"),
+            Symbol::new(&e, "employee_count"),
+        );
 
-    e.ledger().set_timestamp(5_000);
-    validate_run_amendment(
-        &e,
-        admin.clone(),
-        run_id.clone(),
-        String::from_str(&e, "Correcting employee count"),
-        Symbol::new(&e, "employee_count"),
-    );
-
-    let history = get_amendment_history(&e, &run_id);
-    assert_eq!(history.len(), 1);
-    assert_eq!(history.get(0).unwrap().amendor, admin);
-    assert_eq!(history.get(0).unwrap().amended_at, 5_000);
+        let history = get_amendment_history(&e, &run_id);
+        assert_eq!(history.len(), 1);
+        assert_eq!(history.get(0).unwrap().amendor, admin);
+        assert_eq!(history.get(0).unwrap().amended_at, 5_000);
+    });
 }
 
 #[test]
@@ -66,22 +73,22 @@ fn test_amendment_validation_success() {
 fn test_amendment_finalized_run_fails() {
     let e = Env::default();
     e.mock_all_auths();
+    in_contract(&e, || {
+        let admin = Address::generate(&e);
+        setup_contract(&e, &admin);
 
-    let admin = Address::generate(&e);
-    setup_contract(&e, &admin);
+        let run_id = make_run_id(&e);
 
-    let run_id = make_run_id(&e);
+        seal_run(&e, &run_id);
 
-    // Seal the run to simulate finalization
-    seal_run(&e, &run_id);
-
-    validate_run_amendment(
-        &e,
-        admin.clone(),
-        run_id.clone(),
-        String::from_str(&e, "Too late"),
-        Symbol::new(&e, "some_field"),
-    );
+        validate_run_amendment(
+            &e,
+            admin.clone(),
+            run_id.clone(),
+            String::from_str(&e, "Too late"),
+            Symbol::new(&e, "some_field"),
+        );
+    });
 }
 
 #[test]
@@ -89,68 +96,78 @@ fn test_amendment_finalized_run_fails() {
 fn test_amendment_empty_reason_fails() {
     let e = Env::default();
     e.mock_all_auths();
+    in_contract(&e, || {
+        let admin = Address::generate(&e);
+        setup_contract(&e, &admin);
 
-    let admin = Address::generate(&e);
-    setup_contract(&e, &admin);
+        let run_id = make_run_id(&e);
 
-    let run_id = make_run_id(&e);
-
-    validate_run_amendment(
-        &e,
-        admin.clone(),
-        run_id.clone(),
-        String::from_str(&e, ""),
-        Symbol::new(&e, "some_field"),
-    );
+        validate_run_amendment(
+            &e,
+            admin.clone(),
+            run_id.clone(),
+            String::from_str(&e, ""),
+            Symbol::new(&e, "some_field"),
+        );
+    });
 }
 
 #[test]
 fn test_get_amendment_history() {
     let e = Env::default();
     e.mock_all_auths();
-
+    let id = e.register(payroll::Payroll, ());
     let admin = Address::generate(&e);
-    setup_contract(&e, &admin);
-
     let run_id = make_run_id(&e);
+    e.as_contract(&id, || setup_contract(&e, &admin));
 
     e.ledger().set_timestamp(1_000);
-    validate_run_amendment(
-        &e,
-        admin.clone(),
-        run_id.clone(),
-        String::from_str(&e, "First amendment"),
-        Symbol::new(&e, "field_a"),
-    );
+    e.as_contract(&id, || {
+        validate_run_amendment(
+            &e,
+            admin.clone(),
+            run_id.clone(),
+            String::from_str(&e, "First amendment"),
+            Symbol::new(&e, "field_a"),
+        );
+    });
 
     e.ledger().set_timestamp(2_000);
-    validate_run_amendment(
-        &e,
-        admin.clone(),
-        run_id.clone(),
-        String::from_str(&e, "Second amendment"),
-        Symbol::new(&e, "field_b"),
-    );
+    e.as_contract(&id, || {
+        validate_run_amendment(
+            &e,
+            admin.clone(),
+            run_id.clone(),
+            String::from_str(&e, "Second amendment"),
+            Symbol::new(&e, "field_b"),
+        );
+    });
 
-    let history = get_amendment_history(&e, &run_id);
-    assert_eq!(history.len(), 2);
-    assert_eq!(history.get(0).unwrap().amended_at, 1_000);
-    assert_eq!(history.get(1).unwrap().amended_at, 2_000);
+    e.as_contract(&id, || {
+        let history = get_amendment_history(&e, &run_id);
+        assert_eq!(history.len(), 2);
+        assert_eq!(history.get(0).unwrap().amended_at, 1_000);
+        assert_eq!(history.get(1).unwrap().amended_at, 2_000);
+    });
 }
 
 #[test]
 fn test_can_amend_run_true_before_seal() {
     let e = Env::default();
-    let run_id = make_run_id(&e);
-    assert!(can_amend_run(&e, &run_id));
+    in_contract(&e, || {
+        let run_id = make_run_id(&e);
+        assert!(can_amend_run(&e, &run_id));
+    });
 }
 
 #[test]
 fn test_can_amend_run_false_after_seal() {
     let e = Env::default();
-    let run_id = make_run_id(&e);
-    seal_run(&e, &run_id);
-    assert!(!can_amend_run(&e, &run_id));
+    in_contract(&e, || {
+        let run_id = make_run_id(&e);
+        seal_run(&e, &run_id);
+        assert!(!can_amend_run(&e, &run_id));
+    });
 }
 
 #[test]
@@ -158,18 +175,19 @@ fn test_can_amend_run_false_after_seal() {
 fn test_non_admin_amendment_fails() {
     let e = Env::default();
     e.mock_all_auths();
+    in_contract(&e, || {
+        let admin = Address::generate(&e);
+        let other = Address::generate(&e);
+        setup_contract(&e, &admin);
 
-    let admin = Address::generate(&e);
-    let other = Address::generate(&e);
-    setup_contract(&e, &admin);
+        let run_id = make_run_id(&e);
 
-    let run_id = make_run_id(&e);
-
-    validate_run_amendment(
-        &e,
-        other, // not the admin
-        run_id,
-        String::from_str(&e, "Unauthorized attempt"),
-        Symbol::new(&e, "some_field"),
-    );
+        validate_run_amendment(
+            &e,
+            other,
+            run_id,
+            String::from_str(&e, "Unauthorized attempt"),
+            Symbol::new(&e, "some_field"),
+        );
+    });
 }

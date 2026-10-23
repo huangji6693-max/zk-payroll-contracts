@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(deprecated)]
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Bytes, BytesN, Env, Vec};
 
@@ -263,7 +264,7 @@ impl ProofVerifier {
             Some(reference) => reference,
             None => return false,
         };
-        if !Self::reference_is_current(&env, &reference).is_ok() {
+        if Self::reference_is_current(&env, &reference).is_err() {
             return false;
         }
         if reference.proof_hash != Self::proof_digest(&env, &proof) {

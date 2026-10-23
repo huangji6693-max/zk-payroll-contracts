@@ -194,7 +194,7 @@ fn test_check_upgrade_compatibility_passes_for_initialized_state() {
     assert!(report.initialized);
     assert!(report.admin_configured);
     assert!(report.treasury_asset_allowed);
-    assert!(report.treasury_asset_decimals_configured);
+    assert!(report.treasury_decimals_configured);
 }
 
 /// Forward compatibility: an implementation declaring a newer schema than the
@@ -284,10 +284,13 @@ fn test_check_upgrade_compatibility_is_read_only() {
     assert_eq!(ctx.executor.get_total_paid(&company_id), 50_000);
     assert!(ctx.executor.is_paid(&employee_2, &1));
 
-    // A new period can still be opened after the preflight.
+    // A new period can still be opened after the preflight (only one period may
+    // be open at a time, so close period 1 first).
+    let _ = ctx.executor.close_period(&company_id, &1);
     let period_2 = ctx.executor.create_period(&company_id);
     assert_eq!(period_2.period_id, 2);
-    assert_eq!(ctx.executor.get_period_sequence(&company_id), 2);
+    // `get_period_sequence` returns the next period id to be assigned.
+    assert_eq!(ctx.executor.get_period_sequence(&company_id), 3);
 }
 
 // ===========================================================================
@@ -408,7 +411,7 @@ fn test_check_upgrade_compatibility_report_is_privacy_safe() {
     assert!(report.initialized);
     assert!(report.admin_configured);
     assert!(report.treasury_asset_allowed);
-    assert!(report.treasury_asset_decimals_configured);
+    assert!(report.treasury_decimals_configured);
 
     // The report is stable across repeated preflights: it describes the
     // contract's configuration, not the call or the caller.

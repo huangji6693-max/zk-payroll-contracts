@@ -7,8 +7,7 @@
 
 use soroban_sdk::testutils::{Address as _, Events as _};
 use soroban_sdk::{
-    xdr::ContractEventBody, Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal, Val,
-    Vec as SVec,
+    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal, Val, Vec as SVec,
 };
 
 use crate::support::{
@@ -156,6 +155,7 @@ fn employer_onboarding_event_order_is_stable() {
     });
 
     let events = env.events().all();
+    let events = events.events();
     assert_eq!(
         events.len(),
         3,
@@ -169,9 +169,7 @@ fn employer_onboarding_event_order_is_stable() {
     ];
     for (index, expected_name) in expected.iter().enumerate() {
         let body = &events[index].body;
-        let v0 = match body {
-            soroban_sdk::xdr::ContractEventBody::V0(v0) => v0,
-        };
+        let soroban_sdk::xdr::ContractEventBody::V0(v0) = body;
         let name_scval = v0
             .topics
             .first()

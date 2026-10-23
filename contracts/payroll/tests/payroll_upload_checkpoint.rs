@@ -46,10 +46,7 @@ fn upload_checkpoint_advances_idempotently_and_completes() {
         client.record_payroll_upload_progress(&admin, &id, &2),
         completed
     );
-    assert_eq!(
-        client.get_payroll_upload_checkpoint(&id),
-        completed
-    );
+    assert_eq!(client.get_payroll_upload_checkpoint(&id), completed);
 }
 
 #[test]

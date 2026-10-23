@@ -120,8 +120,7 @@ pub fn confirm_destination(
 /// Check if a destination is confirmed and not expired.
 pub fn is_destination_confirmed(env: &Env, confirmation: &DestinationConfirmation) -> bool {
     let now = env.ledger().timestamp();
-    confirmation.status == ConfirmationStatus::Confirmed
-        && now <= confirmation.expires_at
+    confirmation.status == ConfirmationStatus::Confirmed && now <= confirmation.expires_at
 }
 
 /// Reject a payment destination.
@@ -219,7 +218,10 @@ mod tests {
         env.ledger().with_mut(|li| li.timestamp = 2000);
 
         let result = confirm_destination(&env, &mut confirmation, &employee);
-        assert_eq!(result, Err(DestinationConfirmationError::ConfirmationExpired));
+        assert_eq!(
+            result,
+            Err(DestinationConfirmationError::ConfirmationExpired)
+        );
     }
 
     #[test]

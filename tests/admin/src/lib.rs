@@ -1,5 +1,3 @@
-mod admin_action_events_test;
-
 //! # Admin Configuration Lock Tests (issue #253)
 //!
 //! Verifies that unsafe admin configuration changes are rejected while a
@@ -18,6 +16,8 @@ mod admin_action_events_test;
 //! ```bash
 //! cargo test -p admin_config_lock_tests
 //! ```
+
+mod admin_action_events_test;
 
 #[cfg(test)]
 mod tests {
@@ -51,7 +51,7 @@ mod tests {
     }
 
     fn test_nonce(env: &Env, seed: u8) -> BytesN<32> {
-        let mut arr = [0u8; 32];
+        let mut arr = [1u8; 32];
         arr[0] = seed;
         BytesN::from_array(env, &arr)
     }
@@ -94,7 +94,7 @@ mod tests {
         commitment_client.set_payroll_operator(&payroll_id);
 
         let employee = Address::generate(env);
-        commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[0u8; 32]));
+        commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[1u8; 32]));
 
         (payroll_client, admin, treasury, treasury_owner, employee)
     }
@@ -151,7 +151,7 @@ mod tests {
         payroll_client.cancel_payroll_run(&admin, &run_a, &Symbol::new(&env, "test"));
         assert!(payroll_client.has_active_payroll_run());
 
-        let new_asset = Address::generate(&env);
+        let new_asset = payroll_client.get_addresses().token;
         let result = payroll_client.try_set_asset_allowed(&new_asset, &true);
         assert!(result.is_err(), "lock must still be engaged");
 
@@ -252,7 +252,7 @@ mod tests {
 
         prepare_a_run(&env, &payroll_client, &employee, 1);
 
-        let new_asset = Address::generate(&env);
+        let new_asset = payroll_client.get_addresses().token;
         let result = payroll_client.try_set_asset_allowed(&new_asset, &true);
         assert!(
             result.is_err(),
@@ -265,7 +265,7 @@ mod tests {
         let env = Env::default();
         let (payroll_client, _admin, _treasury, _treasury_owner, _employee) = setup(&env);
 
-        let new_asset = Address::generate(&env);
+        let new_asset = payroll_client.get_addresses().token;
         payroll_client.set_asset_allowed(&new_asset, &true);
         assert!(payroll_client.is_asset_allowed(&new_asset));
     }

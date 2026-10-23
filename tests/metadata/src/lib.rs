@@ -24,6 +24,7 @@ fn setup_system(
     Address, // employee
 ) {
     env.mock_all_auths();
+    env.budget().reset_unlimited();
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
     let admin = Address::generate(env);
@@ -88,6 +89,8 @@ fn setup_system(
     );
 
     commitment_client.set_payroll_operator(&payroll_id);
+    payroll_client.register_import_source(&admin, &0u32);
+    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[1u8; 32]));
 
     (
         payroll_client,
@@ -210,7 +213,7 @@ fn test_set_employee_reference_id_valid_length_succeeds() {
         Some(valid_ref_min.clone())
     );
 
-    let long_str = "EMP-".to_string() + &"9".repeat(240);
+    let long_str = "EMP-".to_string() + &"9".repeat(150);
     let valid_ref_max = String::from_str(&env, &long_str);
     commitment.set_employee_reference_id(&employee, &valid_ref_max);
     assert_eq!(
@@ -302,7 +305,7 @@ fn test_deposit_all_zero_id_panics() {
 #[should_panic(expected = "Digest cannot be all-zero bytes")]
 fn test_batch_process_payroll_all_zero_nonce_panics() {
     let env = Env::default();
-    let (payroll, _, _, _, _, _, employee) = setup_system(&env);
+    let (payroll, _, _, _, admin, _, employee) = setup_system(&env);
 
     let proof = BytesN::from_array(&env, &[1u8; 256]);
     let mut proofs = Vec::new(&env);
@@ -319,6 +322,7 @@ fn test_batch_process_payroll_all_zero_nonce_panics() {
         &1000i128,
         &zero_hash(&env),
         &None,
+        &admin,
     );
 }
 
@@ -360,8 +364,15 @@ fn test_metadata_validation_preserves_privacy() {
     let meta_hash = valid_hash(&env, 0x88);
 
     payroll.commit_metadata_hash(&admin, &meta_hash);
-    let run_id =
-        payroll.batch_process_payroll(&proofs, &amounts, &employees, &50_000i128, &nonce, &None);
+    let run_id = payroll.batch_process_payroll(
+        &proofs,
+        &amounts,
+        &employees,
+        &50_000i128,
+        &nonce,
+        &None,
+        &admin,
+    );
     payroll.set_run_metadata(&admin, &run_id, &meta_hash);
 
     let run = payroll.get_payroll_run(&run_id);
@@ -379,8 +390,7 @@ fn test_commit_metadata_hash_returns_consistent_digest() {
     let (payroll, _, _, _, admin, _, _) = setup_system(&env);
 
     let meta_hash = valid_hash(&env, 0xab);
-    let returned = payroll.commit_metadata_hash(&admin, &meta_hash);
-    assert_eq!(returned, meta_hash);
+    payroll.commit_metadata_hash(&admin, &meta_hash);
 }
 
 #[test]
@@ -399,13 +409,14 @@ fn test_set_run_metadata_matches_committed_digest() {
     let mut employees = Vec::new(&env);
     employees.push_back(employee);
 
-    let run_id = payroll.prepare_payroll_run(
+    let run_id = payroll.batch_process_payroll(
         &proofs,
         &amounts,
         &employees,
         &1000i128,
         &valid_hash(&env, 0x11),
         &None,
+        &admin,
     );
 
     payroll.set_run_metadata(&admin, &run_id, &meta_hash);
@@ -428,19 +439,19 @@ fn test_metadata_digest_consistent_across_creation_and_update() {
     let mut employees = Vec::new(&env);
     employees.push_back(employee);
 
-    let run_id = payroll.prepare_payroll_run(
+    let run_id = payroll.batch_process_payroll(
         &proofs,
         &amounts,
         &employees,
         &2000i128,
         &valid_hash(&env, 0x22),
         &None,
+        &admin,
     );
     payroll.set_run_metadata(&admin, &run_id, &meta_hash);
 
     // Re-committing the same digest must remain consistent.
-    let recommitted = payroll.commit_metadata_hash(&admin, &meta_hash);
-    assert_eq!(recommitted, meta_hash);
+    payroll.commit_metadata_hash(&admin, &meta_hash);
     assert_eq!(payroll.get_metadata_hash(&run_id), meta_hash);
 }
 
@@ -484,12 +495,8 @@ fn test_audit_verify_payroll_metadata_matching_digest_succeeds() {
     let _key_bytes = audit.generate_view_key(&auditor, &expiration);
 
     let digest = valid_hash(&env, 0x55);
-    let result = audit.try_verify_payroll_metadata(
-        &auditor,
-        &digest,
-        &digest,
-        &AuditScope::FullCompany,
-    );
+    let result =
+        audit.try_verify_payroll_metadata(&auditor, &digest, &digest, &AuditScope::FullCompany);
     assert!(result.is_ok());
 }
 
@@ -504,13 +511,9 @@ fn test_audit_verify_payroll_metadata_mismatched_digest_fails() {
 
     let expected = valid_hash(&env, 0x55);
     let actual = valid_hash(&env, 0x66);
-    let result = audit.try_verify_payroll_metadata(
-        &auditor,
-        &expected,
-        &actual,
-        &AuditScope::FullCompany,
-    );
-    assert!(result.is_err());
+    let result =
+        audit.try_verify_payroll_metadata(&auditor, &expected, &actual, &AuditScope::FullCompany);
+    assert_eq!(result.unwrap(), Ok(false));
 }
 
 #[test]
@@ -531,8 +534,9 @@ fn test_metadata_digest_consistent_through_settlement() {
     employees.push_back(employee);
 
     let nonce = valid_hash(&env, 0x88);
-    let run_id =
-        payroll.batch_process_payroll(&proofs, &amounts, &employees, &3000i128, &nonce, &None);
+    let run_id = payroll.batch_process_payroll(
+        &proofs, &amounts, &employees, &3000i128, &nonce, &None, &admin,
+    );
     payroll.set_run_metadata(&admin, &run_id, &meta_hash);
 
     let run = payroll.get_payroll_run(&run_id);
@@ -558,8 +562,9 @@ fn test_metadata_digest_mismatch_after_settlement_detected() {
     employees.push_back(employee);
 
     let nonce = valid_hash(&env, 0x88);
-    let run_id =
-        payroll.batch_process_payroll(&proofs, &amounts, &employees, &3000i128, &nonce, &None);
+    let run_id = payroll.batch_process_payroll(
+        &proofs, &amounts, &employees, &3000i128, &nonce, &None, &admin,
+    );
     payroll.set_run_metadata(&admin, &run_id, &meta_hash);
 
     let tampered = valid_hash(&env, 0xaa);

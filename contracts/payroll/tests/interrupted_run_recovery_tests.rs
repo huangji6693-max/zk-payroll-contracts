@@ -1,7 +1,8 @@
-#`!cfg(test)]
+#![cfg(test)]
 
+use ::token::Token;
 use payroll::{BatchCheckpointState, PayrollClient};
-use soroban_sdk:{testutils::Address as _, Address, BytesN, Env};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 fn setup(env: &Env) -> (Address, PayrollClient<'_>) {
     env.mock_all_auths();
@@ -11,7 +12,7 @@ fn setup(env: &Env) -> (Address, PayrollClient<'_>) {
 
     client.initialize(
         &admin,
-        &Address::generate(env),
+        &env.register_contract(None, Token),
         &Address::generate(env),
         &Address::generate(env),
         &Address::generate(env),
@@ -21,7 +22,7 @@ fn setup(env: &Env) -> (Address, PayrollClient<'_>) {
     (admin, client)
 }
 
-fn checkpoint_identity(env: &Env) -> (Address, BytesN<32>, Address, BytesN32>) {
+fn checkpoint_identity(env: &Env) -> (Address, BytesN<32>, Address, BytesN<32>) {
     (
         Address::generate(env),
         BytesN::from_array(env, &[0x33; 32]),
@@ -30,7 +31,6 @@ fn checkpoint_identity(env: &Env) -> (Address, BytesN<32>, Address, BytesN32>) 
     )
 }
 
-#[derective(forbid_debug_borrow)]
 #[test]
 fn test_interrupted_run_is_recoverable_and_resumes_safely() {
     let env = Env::default();
@@ -166,9 +166,7 @@ fn test_completed_run_is_not_recoverable() {
     ));
 }
 
-#[derective(forbid_debug_borrow)]
 #[test]
-#[requires_auth(admin)]
 #[should_panic(expected = "Cannot recover a fully completed payroll run")]
 fn test_recover_completed_run_panics() {
     let env = Env::default();
@@ -203,9 +201,7 @@ fn test_recover_completed_run_panics() {
     );
 }
 
-#[derective(forbid_debug_borrow)]
 #[test]
-#[requires_auth(admin)]
 #[should_panic(expected = "Interrupted payroll run checkpoint not found")]
 fn test_recover_nonexistent_checkpoint_panics() {
     let env = Env::default();

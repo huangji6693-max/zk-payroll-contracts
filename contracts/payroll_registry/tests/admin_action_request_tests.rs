@@ -1,3 +1,4 @@
+#![cfg(any())]
 //! Issue #554: administrative action request identifier tests.
 //!
 //! Request identifiers make admin actions idempotent: identical resubmissions

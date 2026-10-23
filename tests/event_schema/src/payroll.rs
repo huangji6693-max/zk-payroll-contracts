@@ -169,7 +169,12 @@ fn case_treasury_balance_snapshot(env: &Env, cid: &Address, out: &mut SchemaMap)
     let (_, topics, data) = last_event(env);
     assert_eq!(
         topics,
-        (payroll_events::payroll_topic(), Symbol::new(env, "treasury_balance_snapshot"), asset.clone()).into_val(env),
+        (
+            payroll_events::payroll_topic(),
+            Symbol::new(env, "treasury_balance_snapshot"),
+            asset.clone()
+        )
+            .into_val(env),
         "payroll.treasury_balance_snapshot topics changed"
     );
     let decoded: (i128, i128, i128, i128, u64, Symbol) = data.try_into_val(env).unwrap();
@@ -178,7 +183,11 @@ fn case_treasury_balance_snapshot(env: &Env, cid: &Address, out: &mut SchemaMap)
         "payroll.treasury_balance_snapshot".to_string(),
         EventSchema {
             schema_version: 1,
-            topics: vec![sym("payroll"), sym("treasury_balance_snapshot"), dynamic("Address")],
+            topics: vec![
+                sym("payroll"),
+                sym("treasury_balance_snapshot"),
+                dynamic("Address"),
+            ],
             data: vec![
                 field("total_balance", "i128"),
                 field("available_balance", "i128"),
@@ -1211,12 +1220,7 @@ fn case_payroll_upload_started(env: &Env, cid: &Address, out: &mut SchemaMap) {
     );
 }
 
-fn case_payroll_upload_cursor_event(
-    env: &Env,
-    cid: &Address,
-    out: &mut SchemaMap,
-    action: &str,
-) {
+fn case_payroll_upload_cursor_event(env: &Env, cid: &Address, out: &mut SchemaMap, action: &str) {
     let upload_id = BytesN::from_array(env, &[0x73; 32]);
     let batch_root = BytesN::from_array(env, &[0x74; 32]);
     let uploaded_chunks = 2u32;

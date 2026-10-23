@@ -83,7 +83,7 @@ fn setup_payroll_with_reference(
     commitment_client.set_payroll_operator(&payroll_id);
 
     let employee = Address::generate(env);
-    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[0u8; 32]));
+    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[1u8; 32]));
 
     // Set employee reference ID (safe lookup key)
     let ref_id = String::from_str(env, "EMP-ZK-999");

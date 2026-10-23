@@ -25,7 +25,11 @@ fn event_topics(env: &Env, index: usize) -> soroban_sdk::Vec<Val> {
 /// Decodes the topics of the last recorded contract event into host values.
 fn last_event_topics(env: &Env) -> soroban_sdk::Vec<Val> {
     let recorded = env.events().all();
-    let index = recorded.events().len().checked_sub(1).expect("no events recorded");
+    let index = recorded
+        .events()
+        .len()
+        .checked_sub(1)
+        .expect("no events recorded");
     event_topics(env, index)
 }
 

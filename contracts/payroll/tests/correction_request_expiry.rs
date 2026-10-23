@@ -27,7 +27,7 @@ use payroll::{Payroll, PayrollClient, RunDraftState};
 use proof_verifier::{ProofVerifier, ProofVerifierClient, VerificationKey};
 use salary_commitment::{SalaryCommitmentContract, SalaryCommitmentContractClient};
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
-use soroban_sdk::{Address, BytesN, Env, Symbol, TryIntoVal, Vec};
+use soroban_sdk::{Address, BytesN, Env, Symbol, TryFromVal, TryIntoVal, Val, Vec};
 
 /// One hour. Shorter than every other payroll window so the gates never interact.
 const WINDOW: u64 = 3_600;
@@ -369,10 +369,16 @@ fn admin_can_escalate_a_late_pending_correction_once() {
     assert!(payroll.is_correction_request_expired(&draft_id));
     payroll.escalate_correction_request(&admin, &draft_id);
     let events = env.events().all();
-    assert_eq!(events.len(), 1);
-    let event = events.get(0).expect("escalation event");
-    let event_name: Symbol = event.1.get(1).unwrap().try_into_val(&env).unwrap();
-    let (emitted_draft_id, emitted_admin): (u64, Address) = event.2.try_into_val(&env).unwrap();
+    let event_list = events.events();
+    assert_eq!(event_list.len(), 1);
+    let body = match &event_list[0].body {
+        soroban_sdk::xdr::ContractEventBody::V0(body) => body,
+        _ => unreachable!("v0 event body"),
+    };
+    let event_name: Symbol = Symbol::try_from_val(&env, body.topics.get(1).unwrap()).unwrap();
+    let vals = Vec::<Val>::try_from_val(&env, &body.data).unwrap();
+    let emitted_draft_id: u64 = vals.get(0).unwrap().try_into_val(&env).unwrap();
+    let emitted_admin: Address = vals.get(1).unwrap().try_into_val(&env).unwrap();
     assert_eq!(event_name, Symbol::new(&env, "adjustment_escalated"));
     assert_eq!(emitted_draft_id, draft_id);
     assert_eq!(emitted_admin, admin);

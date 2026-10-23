@@ -125,7 +125,7 @@ pub struct UpgradeCompatibilityReport {
     pub treasury_asset_allowed: bool,
     /// True when the treasury asset has a configured decimal precision, which
     /// the amount-normalisation path requires.
-    pub treasury_asset_decimals_configured: bool,
+    pub treasury_decimals_configured: bool,
 }
 
 /// Contract addresses for dependencies
@@ -410,12 +410,12 @@ impl PaymentExecutor {
             .persistent()
             .get(&DataKey::AllowedAsset(addresses.token.clone()))
             .unwrap_or(false);
-        let treasury_asset_decimals_configured = env
+        let treasury_decimals_configured = env
             .storage()
             .persistent()
             .has(&DataKey::AssetDecimals(addresses.token));
 
-        if !treasury_asset_allowed || !treasury_asset_decimals_configured {
+        if !treasury_asset_allowed || !treasury_decimals_configured {
             return Err(StorageError::StorageCorruption);
         }
 
@@ -425,7 +425,7 @@ impl PaymentExecutor {
             initialized: true,
             admin_configured: true,
             treasury_asset_allowed,
-            treasury_asset_decimals_configured,
+            treasury_decimals_configured,
         })
     }
 
@@ -1015,7 +1015,7 @@ impl PaymentExecutor {
     /// Receipt IDs are never emitted in events and carry no salary or
     /// employee data — the contract treats them as opaque 32-byte
     /// identifiers, so error paths stay privacy-safe.
-    pub fn execute_batch_payroll_with_receipt(
+    pub fn execute_batch_with_receipt(
         env: Env,
         company_id: u64,
         employees: soroban_sdk::Vec<Address>,
@@ -1175,7 +1175,42 @@ mod tests {
     use payroll_registry::PayrollRegistry;
     use proof_verifier::{ProofVerifier, VerificationKey};
     use soroban_sdk::testutils::{Address as _, Events};
-    use soroban_sdk::{Env, IntoVal, Symbol, TryIntoVal};
+    use soroban_sdk::{xdr, Env, IntoVal, Symbol, TryFromVal, TryIntoVal, Val};
+
+    /// Decodes the topics of the recorded contract event at `index` into host values.
+    fn event_topics(env: &Env, index: usize) -> soroban_sdk::Vec<Val> {
+        let recorded = env.events().all();
+        let Some(event) = recorded.events().get(index) else {
+            panic!("no contract event recorded at index {index}");
+        };
+        let xdr::ContractEventBody::V0(body) = &event.body else {
+            panic!("expected a v0 contract event body");
+        };
+        let mut topics = soroban_sdk::Vec::new(env);
+        for topic in body.topics.iter() {
+            topics.push_back(Val::try_from_val(env, topic).expect("invalid event topic"));
+        }
+        topics
+    }
+
+    /// Topics of the first event of the most recent invocation whose first
+    /// topic equals `symbol`.
+    fn topics_for_symbol(env: &Env, symbol: &str) -> Option<soroban_sdk::Vec<Val>> {
+        let expected = Symbol::new(env, symbol);
+        let recorded = env.events().all();
+        for index in 0..recorded.events().len() {
+            let topics = event_topics(env, index);
+            if topics.is_empty() {
+                continue;
+            }
+            if let Ok(found) = Symbol::try_from_val(env, &topics.get(0).unwrap()) {
+                if found == expected {
+                    return Some(topics);
+                }
+            }
+        }
+        None
+    }
 
     fn setup_addresses(env: &Env) -> ContractAddresses {
         env.mock_all_auths();
@@ -1218,10 +1253,15 @@ mod tests {
         }
     }
 
-    /// Set a zero-rate withholding config for a company so existing tests that
-    /// call `execute_payment` aren't blocked by the new config-missing guard.
-    /// Uses `mock_all_auths` so caller must have that already set.
+    /// Configure the executor admin, the treasury asset decimals and a zero-rate
+    /// withholding config for a company so tests that call `execute_payment`
+    /// exercise payment logic rather than the configuration guards.
+    /// Uses `mock_all_auths` so the caller must have that already set.
     fn setup_withholding_zero_rate(client: &PaymentExecutorClient, env: &Env, company_id: u64) {
+        let addresses = client.get_addresses();
+        // Some tests configure the admin themselves; leave it untouched then.
+        let _ = client.try_set_executor_admin(&Address::generate(env));
+        client.set_asset_decimals(&addresses.token, &7u32);
         let tax_addr = Address::generate(env);
         client.set_withholding_config(
             &company_id,
@@ -1305,17 +1345,16 @@ mod tests {
             &1,
         );
 
+        // Event introspection must happen before any other contract call, since
+        // soroban-sdk 28 only exposes the most recent invocation's events.
+        let topics = topics_for_symbol(&env, "PayrollProcessed")
+            .expect("PayrollProcessed event not emitted");
+        assert_eq!(topics.len(), 2);
+        let comp_id: u64 = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(comp_id, company_id);
+
         assert_eq!(token_client.balance(&treasury), 9_000);
         assert_eq!(token_client.balance(&employee), 1_000);
-
-        let events = env.events().all();
-        assert_eq!(events.len(), 7); // +1 for WithholdingCfgSet (issue #538)
-        let event = events.get(events.len() - 1).unwrap();
-        assert_eq!(event.1.len(), 2);
-        let sym0: Symbol = event.1.get(0).unwrap().try_into_val(&env.clone()).unwrap();
-        assert_eq!(sym0, Symbol::new(&env, "PayrollProcessed"));
-        let comp_id: u64 = event.1.get(1).unwrap().try_into_val(&env.clone()).unwrap();
-        assert_eq!(comp_id, company_id);
     }
 
     #[test]
@@ -1621,17 +1660,19 @@ mod tests {
             &1,
         );
 
+        // Event introspection must happen before any other contract call, since
+        // soroban-sdk 28 only exposes the most recent invocation's events.
+        assert_eq!(
+            topics_for_symbol(&env, "PayrollProcessed")
+                .expect("PayrollProcessed event not emitted")
+                .len(),
+            2
+        );
+
         assert_eq!(token_client.balance(&treasury), 7_500);
         assert_eq!(token_client.balance(&employee), 2_500);
         assert!(client.is_paid(&employee, &1));
         assert_eq!(client.get_total_paid(&company_id), 2_500);
-
-        let events = env.events().all();
-        assert_eq!(events.len(), 7); // +1 for WithholdingCfgSet (issue #538)
-        let event = events.get(events.len() - 1).unwrap();
-        assert_eq!(event.1.len(), 2);
-        let sym: Symbol = event.1.get(0).unwrap().try_into_val(&env.clone()).unwrap();
-        assert_eq!(sym, Symbol::new(&env, "PayrollProcessed"));
 
         let replay = client.try_execute_payment(
             &company_id,
@@ -1900,6 +1941,11 @@ mod tests {
         let period = client.create_period(&company_id);
         assert_eq!(period.period_id, 1);
 
+        // Configure the executor so the payment path is reached.
+        client.set_executor_admin(&Address::generate(&env));
+        client.set_asset_decimals(&addresses.token, &7u32);
+        setup_withholding_zero_rate(&client, &env, company_id);
+
         // Execute payment immediately (proof is fresh)
         let result = client.try_execute_payment(
             &company_id,
@@ -2051,36 +2097,22 @@ mod tests {
         let client = PaymentExecutorClient::new(&env, &contract_id);
 
         let addresses = setup_addresses(&env);
-        let before_init = env.events().all().len();
         client.initialize(&addresses);
-        let after_init = env.events().all().len();
-        assert_eq!(after_init, before_init + 1);
 
-        let init_event = env.events().all().get(after_init - 1).unwrap();
-        let sym0: Symbol = init_event
-            .1
-            .get(0)
-            .unwrap()
-            .try_into_val(&env.clone())
-            .unwrap();
+        // soroban-sdk 28 only exposes events from the most recent invocation.
+        let init_topics = event_topics(&env, 0);
+        let sym0: Symbol = init_topics.get(0).unwrap().try_into_val(&env).unwrap();
         assert_eq!(sym0, Symbol::new(&env, "TreasuryAssetAllowedUpdated"));
 
         let executor_admin = Address::generate(&env);
         client.set_executor_admin(&executor_admin);
 
-        let before_set = env.events().all().len();
-        let new_asset = Address::generate(&env);
+        // The allowlist only accepts the configured treasury asset.
+        let new_asset = addresses.token.clone();
         client.set_asset_allowed(&new_asset, &true);
-        let after_set = env.events().all().len();
-        assert_eq!(after_set, before_set + 1);
 
-        let set_event = env.events().all().get(after_set - 1).unwrap();
-        let set_sym0: Symbol = set_event
-            .1
-            .get(0)
-            .unwrap()
-            .try_into_val(&env.clone())
-            .unwrap();
+        let set_topics = event_topics(&env, 0);
+        let set_sym0: Symbol = set_topics.get(0).unwrap().try_into_val(&env).unwrap();
         assert_eq!(set_sym0, Symbol::new(&env, "TreasuryAssetAllowedUpdated"));
     }
 
@@ -2467,6 +2499,10 @@ mod tests {
 
         let addresses = setup_addresses(&env);
         client.initialize(&addresses);
+        // Configuration guards are checked before the withholding guard, so the
+        // admin and decimals must be configured for this test to reach it.
+        client.set_executor_admin(&Address::generate(&env));
+        client.set_asset_decimals(&addresses.token, &7u32);
 
         let registry_client = PayrollRegistryClient::new(&env, &addresses.registry);
         let commitment_client = SalaryCommitmentContractClient::new(&env, &addresses.commitment);
@@ -2526,6 +2562,7 @@ mod tests {
         let addresses = setup_addresses(&env);
         client.initialize(&addresses);
         client.set_executor_admin(&Address::generate(&env));
+        client.set_asset_decimals(&addresses.token, &7u32);
 
         let registry_client = PayrollRegistryClient::new(&env, &addresses.registry);
         let commitment_client = SalaryCommitmentContractClient::new(&env, &addresses.commitment);

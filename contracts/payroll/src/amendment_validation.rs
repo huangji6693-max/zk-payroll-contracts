@@ -201,9 +201,10 @@ pub enum AmendmentSealKey {
 /// Called internally when a run is finalized or executed. After sealing,
 /// `can_amend_run` returns `false` for this run.
 pub fn seal_run(e: &Env, run_id: &BytesN<32>) {
-    e.storage()
-        .persistent()
-        .set(&AmendmentSealKey::SealedRun(run_id.clone()), &e.ledger().timestamp());
+    e.storage().persistent().set(
+        &AmendmentSealKey::SealedRun(run_id.clone()),
+        &e.ledger().timestamp(),
+    );
 }
 
 fn can_amend_run_internal(e: &Env, run_id: &BytesN<32>) -> bool {

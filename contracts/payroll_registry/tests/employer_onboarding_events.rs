@@ -5,7 +5,8 @@
 
 use payroll_registry::{PayrollRegistry, PayrollRegistryClient};
 use soroban_sdk::testutils::{Address as _, Events as _};
-use soroban_sdk::{Address, BytesN, Env, String, Symbol, TryIntoVal};
+use soroban_sdk::xdr::ContractEventBody;
+use soroban_sdk::{Address, BytesN, Env, String, Symbol, TryFromVal, TryIntoVal, Val, Vec};
 
 const VALID_EMPLOYEE_WALLET: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
@@ -17,9 +18,13 @@ fn setup() -> (Env, PayrollRegistryClient<'static>) {
     (env, client)
 }
 
-fn event_topic0(env: &Env, index: u32) -> Symbol {
-    let event = env.events().all().get(index).unwrap();
-    event.1.get(0).unwrap().try_into_val(env).unwrap()
+fn event_topic0(env: &Env, index: usize) -> Symbol {
+    let events = env.events().all();
+    let event = events.events().get(index).unwrap();
+    let body = match &event.body {
+        ContractEventBody::V0(body) => body,
+    };
+    body.topics.get(0).unwrap().try_into_val(env).unwrap()
 }
 
 #[test]
@@ -30,29 +35,34 @@ fn employer_onboarding_success_emits_registry_events_in_order() {
     let employee = Address::generate(&env);
     let commitment = BytesN::from_array(&env, &[42u8; 32]);
 
-    let start = env.events().all().len();
     let company_id = client.register_company(&admin, &treasury);
-    client.add_employee(&company_id, &employee, &commitment);
-    let end = env.events().all().len();
-
     assert_eq!(
-        end - start,
-        2,
-        "onboarding must emit company then employee events"
+        env.events().all().events().len(),
+        1,
+        "company registration must emit CompanyRegistered"
     );
     assert_eq!(
-        event_topic0(&env, start),
+        event_topic0(&env, 0),
         Symbol::new(&env, "CompanyRegistered")
     );
-    assert_eq!(
-        event_topic0(&env, start + 1),
-        Symbol::new(&env, "EmployeeAdded")
-    );
 
-    let employee_event = env.events().all().get(start + 1).unwrap();
-    let decoded: (BytesN<32>,) = employee_event.2.try_into_val(&env).unwrap();
+    client.add_employee(&company_id, &employee, &commitment);
     assert_eq!(
-        decoded.0, commitment,
+        env.events().all().events().len(),
+        1,
+        "employee onboarding must emit EmployeeAdded"
+    );
+    assert_eq!(event_topic0(&env, 0), Symbol::new(&env, "EmployeeAdded"));
+
+    let events = env.events().all();
+    let employee_event = events.events().get(0).unwrap();
+    let body = match &employee_event.body {
+        ContractEventBody::V0(body) => body,
+    };
+    let vals: Vec<Val> = Vec::try_from_val(&env, &body.data).unwrap();
+    let decoded: BytesN<32> = vals.get(0).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(
+        decoded, commitment,
         "EmployeeAdded must carry the Poseidon commitment hash, not a salary value"
     );
 }
@@ -66,11 +76,10 @@ fn employer_onboarding_wallet_path_emits_employee_added() {
     let wallet = String::from_str(&env, VALID_EMPLOYEE_WALLET);
 
     let company_id = client.register_company(&admin, &treasury);
-    let before = env.events().all().len();
     client.add_employee_by_wallet(&company_id, &wallet, &commitment);
-    let after = env.events().all().len();
+    let after = env.events().all().events().len();
 
-    assert_eq!(after, before + 1);
+    assert_eq!(after, 1);
     assert_eq!(
         event_topic0(&env, after - 1),
         Symbol::new(&env, "EmployeeAdded")
@@ -82,14 +91,12 @@ fn employer_onboarding_unknown_company_emits_no_employee_event() {
     let (env, client) = setup();
     let employee = Address::generate(&env);
     let commitment = BytesN::from_array(&env, &[44u8; 32]);
-    let before = env.events().all().len();
-
     let result = client.try_add_employee(&99, &employee, &commitment);
     assert!(result.is_err(), "unknown company must fail onboarding");
 
     assert_eq!(
-        env.events().all().len(),
-        before,
+        env.events().all().events().len(),
+        0,
         "failed onboarding must not emit EmployeeAdded"
     );
 }
@@ -103,14 +110,12 @@ fn employer_onboarding_invalid_wallet_emits_no_employee_event() {
     let bad_wallet = String::from_str(&env, "not-a-stellar-wallet");
 
     let company_id = client.register_company(&admin, &treasury);
-    let before = env.events().all().len();
-
     let result = client.try_add_employee_by_wallet(&company_id, &bad_wallet, &commitment);
     assert!(result.is_err(), "invalid wallet must fail onboarding");
 
     assert_eq!(
-        env.events().all().len(),
-        before,
+        env.events().all().events().len(),
+        0,
         "invalid wallet onboarding must not emit EmployeeAdded"
     );
 }
@@ -122,14 +127,12 @@ fn duplicate_company_registration_emits_no_second_event() {
     let treasury = Address::generate(&env);
 
     client.register_company(&admin, &treasury);
-    let before = env.events().all().len();
-
     let result = client.try_register_company(&admin, &treasury);
     assert!(result.is_err(), "duplicate company registration must fail");
 
     assert_eq!(
-        env.events().all().len(),
-        before,
+        env.events().all().events().len(),
+        0,
         "duplicate registration must not emit another CompanyRegistered event"
     );
 }

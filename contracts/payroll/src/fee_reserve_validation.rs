@@ -76,9 +76,7 @@ pub fn compute_effective_fee_reserve(payroll_total: i128, config: &FeeReserveCon
     if config.max_fee_reserve_bps == 0 {
         return config.required_fee_reserve;
     }
-    let bps_amount = payroll_total
-        .saturating_mul(config.max_fee_reserve_bps as i128)
-        / 10_000;
+    let bps_amount = payroll_total.saturating_mul(config.max_fee_reserve_bps as i128) / 10_000;
     config.required_fee_reserve.max(bps_amount)
 }
 
@@ -230,10 +228,7 @@ mod tests {
     #[test]
     fn test_compute_effective_fee_reserve_returns_larger() {
         // flat=100, bps=0 → 100
-        assert_eq!(
-            compute_effective_fee_reserve(50_000, &config(100, 0)),
-            100
-        );
+        assert_eq!(compute_effective_fee_reserve(50_000, &config(100, 0)), 100);
 
         // flat=100, bps=100 (1%), payroll=50_000 → bps_amount=500 > 100 → 500
         assert_eq!(
@@ -248,9 +243,6 @@ mod tests {
         );
 
         // flat=0, bps=50 (0.5%), payroll=10_000 → bps_amount=50 > 0 → 50
-        assert_eq!(
-            compute_effective_fee_reserve(10_000, &config(0, 50)),
-            50
-        );
+        assert_eq!(compute_effective_fee_reserve(10_000, &config(0, 50)), 50);
     }
 }

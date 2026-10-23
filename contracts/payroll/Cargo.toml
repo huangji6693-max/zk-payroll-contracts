@@ -19,6 +19,6 @@ crate-type = ["cdylib", "rlib"]
 doctest = false
 
 [dev-dependencies]
-soroban-sdk = { workspace = true, features = ["testutils"] }
+soroban-sdk = { workspace = true, features = ["testutils", "alloc"] }
 pause_manager = { path = "../pause_manager", features = ["contract"] }
 ed25519-dalek = "3.0.0"

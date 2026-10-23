@@ -70,7 +70,7 @@ fn setup_payroll(env: &Env) -> (PayrollClient<'_>, Address, Address, Address, Ad
     commitment_client.set_payroll_operator(&payroll_id);
 
     let employee = Address::generate(env);
-    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[0u8; 32]));
+    commitment_client.store_commitment(&employee, &BytesN::from_array(env, &[1u8; 32]));
 
     (payroll_client, admin, treasury, treasury_owner, employee)
 }
@@ -194,7 +194,7 @@ fn test_reopen_empty_period_label_is_rejected() {
 
 /// Edge case: reopening while the contract is paused must be blocked.
 #[test]
-#[should_panic(expected = "Contract is paused")]
+#[should_panic(expected = "Payroll is paused")]
 fn test_reopen_blocked_while_contract_is_paused() {
     let env = Env::default();
     let (payroll, admin, _treasury, _owner, _employee) = setup_payroll(&env);

@@ -20,21 +20,32 @@
 
 #[cfg(test)]
 mod wallet_update_event_tests {
+    use crate::{ev_data_empty, ev_data_vals, ev_topics};
     use payroll_registry::{PayrollRegistry, PayrollRegistryClient};
     use soroban_sdk::testutils::{Address as _, Events};
+    macro_rules! ev_len {
+        ($e:expr) => {
+            $e.events().all().events().len()
+        };
+    }
+    macro_rules! ev_at {
+        ($e:expr, $i:expr) => {{
+            let __all = $e.events().all();
+            __all.events().get($i).unwrap().clone()
+        }};
+    }
+
     use soroban_sdk::{Address, BytesN, Env, String, Symbol, TryIntoVal};
 
     // A valid Stellar account StrKey that is NOT the zero address.
     // Encodes 32 key bytes of 0x01 (key starting with 0x01, rest zeros):
     //   version 0x30 + [0x01, 0x00, ..., 0x00] + CRC16-XMODEM
-    const VALID_WALLET_NON_ZERO: &str =
-        "GAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHV4";
+    const VALID_WALLET_NON_ZERO: &str = "GAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHV4";
 
     // A second valid Stellar account StrKey for multi-address tests.
     // Encodes 32 key bytes of 0x01:
     //   version 0x30 + [0x01; 32] + CRC16-XMODEM
-    const VALID_WALLET_ALL_ONES: &str =
-        "GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H";
+    const VALID_WALLET_ALL_ONES: &str = "GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H";
 
     // The Stellar zero address — valid format but blocked as a destination.
     const ZERO_WALLET: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
@@ -81,47 +92,62 @@ mod wallet_update_event_tests {
         let new_dest_wallet = String::from_str(&env, VALID_WALLET_NON_ZERO);
         let new_dest = Address::from_string(&new_dest_wallet);
 
-        let before = env.events().all().len();
         client.update_payout_destination_wallet(&company_id, &employee, &new_dest_wallet);
-        let after = env.events().all().len();
+        let after = ev_len!(&env);
 
         assert_eq!(
-            after,
-            before + 1,
+            after, 1,
             "update_payout_destination_wallet must emit exactly one event"
         );
 
-        let event = env.events().all().get(after - 1).unwrap();
+        let event = ev_at!(&env, after - 1);
 
         // Topics: (Symbol, company_id, employee)
         assert_eq!(
-            event.1.len(),
+            ev_topics(&env, &event).len(),
             3,
             "PayoutDestinationUpdated must have exactly 3 topics"
         );
 
-        let sym: Symbol = event.1.get(0).unwrap().try_into_val(&env).unwrap();
+        let sym: Symbol = ev_topics(&env, &event)
+            .get(0)
+            .unwrap()
+            .try_into_val(&env)
+            .unwrap();
         assert_eq!(
             sym,
             Symbol::new(&env, "PayoutDestinationUpdated"),
             "first topic must be 'PayoutDestinationUpdated'"
         );
 
-        let topic_company_id: u64 = event.1.get(1).unwrap().try_into_val(&env).unwrap();
+        let topic_company_id: u64 = ev_topics(&env, &event)
+            .get(1)
+            .unwrap()
+            .try_into_val(&env)
+            .unwrap();
         assert_eq!(
             topic_company_id, company_id,
             "second topic must be the company ID"
         );
 
-        let topic_employee: Address = event.1.get(2).unwrap().try_into_val(&env).unwrap();
+        let topic_employee: Address = ev_topics(&env, &event)
+            .get(2)
+            .unwrap()
+            .try_into_val(&env)
+            .unwrap();
         assert_eq!(
             topic_employee, employee,
             "third topic must be the employee address"
         );
 
         // Data: (old_dest, new_dest)
-        let (data_old, data_new): (Address, Address) = event.2.try_into_val(&env).unwrap();
-        assert_eq!(data_old, old_dest, "data[0] must be the previous destination");
+        let data = ev_data_vals(&env, &event);
+        let data_old: Address = data.get(0).unwrap().try_into_val(&env).unwrap();
+        let data_new: Address = data.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(
+            data_old, old_dest,
+            "data[0] must be the previous destination"
+        );
         assert_eq!(
             data_new, new_dest,
             "data[1] must be the newly set destination"
@@ -141,15 +167,11 @@ mod wallet_update_event_tests {
 
         client.update_payout_destination_wallet(&company_id, &employee, &new_dest_wallet);
 
-        let event = env
-            .events()
-            .all()
-            .get(env.events().all().len() - 1)
-            .unwrap();
+        let event = ev_at!(&env, ev_len!(&env) - 1);
 
         // None of the three topics should decode as the 32-byte salary commitment.
-        for i in 0..event.1.len() {
-            let topic_val = event.1.get(i).unwrap();
+        for i in 0..ev_topics(&env, &event).len() {
+            let topic_val = ev_topics(&env, &event).get(i).unwrap();
             let as_commitment: Result<BytesN<32>, _> = topic_val.try_into_val(&env);
             if let Ok(decoded) = as_commitment {
                 assert_ne!(
@@ -173,20 +195,17 @@ mod wallet_update_event_tests {
         let new_dest_wallet = String::from_str(&env, VALID_WALLET_NON_ZERO);
         client.update_payout_destination_wallet(&company_id, &employee, &new_dest_wallet);
 
-        let event = env
-            .events()
-            .all()
-            .get(env.events().all().len() - 1)
-            .unwrap();
+        let event = ev_at!(&env, ev_len!(&env) - 1);
 
         // The data must decode as exactly two addresses.
-        let result: Result<(Address, Address), _> = event.2.try_into_val(&env);
-        assert!(
-            result.is_ok(),
+        let data = ev_data_vals(&env, &event);
+        assert_eq!(
+            data.len(),
+            2,
             "event data must decode as (Address, Address)"
         );
-
-        let (old_dest, new_dest) = result.unwrap();
+        let old_dest: Address = data.get(0).unwrap().try_into_val(&env).unwrap();
+        let new_dest: Address = data.get(1).unwrap().try_into_val(&env).unwrap();
 
         // Neither address should accidentally equal the commitment bytes.
         // The commitment is BytesN<32>; an Address is a different type, so this
@@ -204,7 +223,7 @@ mod wallet_update_event_tests {
 
         // Attempting to decode the data as a commitment tuple must fail,
         // confirming no commitment is embedded in the data payload.
-        let as_commitment: Result<(BytesN<32>,), _> = event.2.try_into_val(&env);
+        let as_commitment: Result<BytesN<32>, _> = data.get(0).unwrap().try_into_val(&env);
         assert!(
             as_commitment.is_err(),
             "event data must not be decodable as a commitment hash tuple"
@@ -225,44 +244,66 @@ mod wallet_update_event_tests {
         let new_dest = Address::generate(&env);
         let old_dest = employee.clone();
 
-        let before = env.events().all().len();
         client.update_payout_destination(&company_id, &employee, &new_dest);
-        let after = env.events().all().len();
+        let after = ev_len!(&env);
 
         assert_eq!(
-            after,
-            before + 1,
+            after, 1,
             "update_payout_destination must emit exactly one event"
         );
 
-        let event = env.events().all().get(after - 1).unwrap();
+        let event = ev_at!(&env, after - 1);
 
         // Topics: (Symbol, company_id, employee)
-        assert_eq!(event.1.len(), 3, "must have exactly 3 topics");
+        assert_eq!(
+            ev_topics(&env, &event).len(),
+            3,
+            "must have exactly 3 topics"
+        );
 
-        let sym: Symbol = event.1.get(0).unwrap().try_into_val(&env).unwrap();
+        let sym: Symbol = ev_topics(&env, &event)
+            .get(0)
+            .unwrap()
+            .try_into_val(&env)
+            .unwrap();
         assert_eq!(
             sym,
             Symbol::new(&env, "PayoutDestinationUpdated"),
             "first topic must be 'PayoutDestinationUpdated'"
         );
 
-        let topic_company_id: u64 = event.1.get(1).unwrap().try_into_val(&env).unwrap();
+        let topic_company_id: u64 = ev_topics(&env, &event)
+            .get(1)
+            .unwrap()
+            .try_into_val(&env)
+            .unwrap();
         assert_eq!(
             topic_company_id, company_id,
             "second topic must be the company ID"
         );
 
-        let topic_employee: Address = event.1.get(2).unwrap().try_into_val(&env).unwrap();
+        let topic_employee: Address = ev_topics(&env, &event)
+            .get(2)
+            .unwrap()
+            .try_into_val(&env)
+            .unwrap();
         assert_eq!(
             topic_employee, employee,
             "third topic must be the employee address"
         );
 
         // Data: (old_dest, new_dest)
-        let (data_old, data_new): (Address, Address) = event.2.try_into_val(&env).unwrap();
-        assert_eq!(data_old, old_dest, "data[0] must be the previous destination");
-        assert_eq!(data_new, new_dest, "data[1] must be the newly set destination");
+        let data = ev_data_vals(&env, &event);
+        let data_old: Address = data.get(0).unwrap().try_into_val(&env).unwrap();
+        let data_new: Address = data.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(
+            data_old, old_dest,
+            "data[0] must be the previous destination"
+        );
+        assert_eq!(
+            data_new, new_dest,
+            "data[1] must be the newly set destination"
+        );
     }
 
     // ── Test 5: duplicate destination rejected ────────────────────────────────
@@ -278,7 +319,7 @@ mod wallet_update_event_tests {
 
         // First update: should succeed and emit one event.
         client.update_payout_destination_wallet(&company_id, &employee, &new_dest_wallet);
-        let events_after_first = env.events().all().len();
+        let events_after_first = ev_len!(&env);
         assert!(events_after_first > 0);
 
         // Second update with the same wallet: must panic (duplicate destination).
@@ -296,7 +337,7 @@ mod wallet_update_event_tests {
         let (env, client, company_id, employee, _commitment) = setup();
 
         // Record the event count before the failing call.
-        let before = env.events().all().len();
+        let before = ev_len!(&env);
 
         let bad_wallet = String::from_str(&env, "not-a-valid-stellar-wallet-string");
 
@@ -307,7 +348,7 @@ mod wallet_update_event_tests {
         // event was emitted. In practice the should_panic attribute handles
         // this, but the assertion documents the contract.
         assert_eq!(
-            env.events().all().len(),
+            ev_len!(&env),
             before,
             "a rejected wallet update must not emit any event"
         );

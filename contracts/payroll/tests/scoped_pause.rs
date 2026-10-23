@@ -22,7 +22,7 @@ fn setup_scoped() -> (Env, PayrollClient<'static>, Address) {
     // pause tests we only need *any* authorized address — `mock_all_auths()`
     // approves everything, so we can use a fresh address without worrying
     // about matching the stored admin.
-    let admin = Address::generate(&env);
+    let admin = client.get_addresses().admin.clone();
 
     // SAFETY: `common::setup` already registered the contract so the client
     // outlives the env reference; we transmute the lifetime for test convenience.
@@ -39,7 +39,7 @@ fn test_activate_scope_pause_blocks_execution() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _token, _employee) = common::setup(&env);
-    let admin = Address::generate(&env);
+    let admin = client.get_addresses().admin.clone();
 
     // Before: not paused
     assert!(!client.is_scope_paused(&PauseScope::Execution));
@@ -58,7 +58,7 @@ fn test_clear_scope_pause_unblocks() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _token, _employee) = common::setup(&env);
-    let admin = Address::generate(&env);
+    let admin = client.get_addresses().admin.clone();
 
     client.activate_scope_pause(&admin, &PauseScope::Execution);
     assert!(client.is_scope_paused(&PauseScope::Execution));
@@ -76,7 +76,7 @@ fn test_audit_scope_independent_of_execution() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _token, _employee) = common::setup(&env);
-    let admin = Address::generate(&env);
+    let admin = client.get_addresses().admin.clone();
 
     client.activate_scope_pause(&admin, &PauseScope::Execution);
 
@@ -121,7 +121,7 @@ fn test_multiple_scopes_independent() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _token, _employee) = common::setup(&env);
-    let admin = Address::generate(&env);
+    let admin = client.get_addresses().admin.clone();
 
     // Pause Funding only.
     client.activate_scope_pause(&admin, &PauseScope::Funding);

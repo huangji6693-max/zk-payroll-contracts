@@ -96,6 +96,10 @@ fn setup_system<'a>(
     token.mint(&treasury, &200_000);
 
     // Issue #538: set zero-rate withholding config so execute_payment is unblocked
+    // The executor must be configured before withholding can be set.
+    executor.set_executor_admin(&Address::generate(env));
+    executor.set_asset_decimals(&executor.get_addresses().token, &7u32);
+
     let tax_addr = Address::generate(env);
     executor.set_withholding_config(
         &company_id,
